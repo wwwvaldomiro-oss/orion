@@ -1,0 +1,1225 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 4.1: Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Pillar 3: Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function hasValidTimestampsOnCreate(data) {
+      return data.createdAt is timestamp
+        && data.updatedAt is timestamp
+        && data.createdAt == request.time
+        && data.updatedAt == request.time;
+    }
+
+    function hasImmutableCoreOnUpdate() {
+      return incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt is timestamp
+        && incoming().updatedAt == request.time;
+    }
+
+    // Pillar 1: Master Gate parent check for user subcollections
+    function parentWorkspaceOwned(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.ownerId == request.auth.uid;
+    }
+
+    // --- Validation Blueprints (Pillar 2) ---
+
+    function isValidPixRecipient(pix) {
+      return pix is map
+        && pix.keys().hasAll(['key', 'name', 'state', 'city'])
+        && pix.keys().hasOnly(['key', 'name', 'state', 'city'])
+        && pix.key is string && pix.key.size() <= 160
+        && pix.name is string && pix.name.size() <= 120
+        && pix.state is string && pix.state.size() <= 4
+        && pix.city is string && pix.city.size() <= 100;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'email', 'photoUrl', 'city', 'state',
+          'selectedLogoId', 'pixRecipient', 'watchlistTickers', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'email', 'photoUrl', 'city', 'state',
+          'selectedLogoId', 'pixRecipient', 'watchlistTickers', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.ownerId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && data.photoUrl is string && data.photoUrl.size() <= 500
+        && data.city is string && data.city.size() <= 100
+        && data.state is string && data.state.size() <= 4
+        && data.selectedLogoId is string
+        && data.selectedLogoId in ['nexo', 'apice', 'prisma', 'vortice', 'orbita']
+        && isValidPixRecipient(data.pixRecipient)
+        && data.watchlistTickers is list
+        && data.watchlistTickers.size() <= 50
+        && (data.watchlistTickers.size() == 0 || (data.watchlistTickers[0] is string && data.watchlistTickers[0].size() <= 16));
+    }
+
+    function isValidBankAccount(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'institution', 'name', 'accountType', 'number', 'balanceCents', 'color', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'institution', 'name', 'accountType', 'number', 'balanceCents', 'color',
+          'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.institution is string && data.institution.size() >= 1 && data.institution.size() <= 80
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.accountType in ['CHECKING', 'SAVINGS']
+        && data.number is string && data.number.size() >= 1 && data.number.size() <= 20
+        && data.balanceCents is int
+        && data.color is string && data.color.size() >= 4 && data.color.size() <= 20
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidCreditCard(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'institution', 'name', 'brand', 'number', 'creditLimitCents',
+          'availableCents', 'closingDay', 'dueDay', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'institution', 'name', 'brand', 'number', 'creditLimitCents',
+          'availableCents', 'closingDay', 'dueDay', 'manualLimitCents', 'manualUsedCents',
+          'linkedAnnualExpenseId', 'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.institution is string && data.institution.size() >= 1 && data.institution.size() <= 80
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.brand in ['VISA', 'MASTERCARD', 'ELO', 'AMEX', 'HIPERCARD', 'OTHER']
+        && data.number is string && data.number.size() >= 1 && data.number.size() <= 10
+        && data.creditLimitCents is int && data.creditLimitCents >= 0
+        && data.availableCents is int
+        && data.closingDay is int && data.closingDay >= 1 && data.closingDay <= 31
+        && data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31
+        && (!('manualLimitCents' in data) || (data.manualLimitCents is int && data.manualLimitCents >= 0))
+        && (!('manualUsedCents' in data) || (data.manualUsedCents is int && data.manualUsedCents >= 0))
+        && (!('linkedAnnualExpenseId' in data) || (data.linkedAnnualExpenseId is string && data.linkedAnnualExpenseId.size() <= 128))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidWalletTransaction(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'accountId', 'accountType', 'accountName', 'institution',
+          'description', 'amountCents', 'date', 'category', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'accountId', 'accountType', 'accountName', 'institution',
+          'description', 'amountCents', 'date', 'category', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.accountId is string && data.accountId.size() <= 128
+        && data.accountType in ['BANK', 'CREDIT']
+        && data.accountName is string && data.accountName.size() <= 100
+        && data.institution is string && data.institution.size() <= 80
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 160
+        && data.amountCents is int
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.category is string && data.category.size() <= 60;
+    }
+
+    function isValidRevenueSource(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'title', 'category', 'expectedCents', 'dueDay', 'recurrence', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'title', 'category', 'expectedCents', 'dueDay', 'recurrence', 'active',
+          'firstDue', 'details', 'note', 'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.category is string && data.category.size() <= 60
+        && data.expectedCents is int && data.expectedCents > 0
+        && data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31
+        && data.recurrence in ['monthly', 'single']
+        && data.active is bool
+        && (!('firstDue' in data) || (data.firstDue is string && data.firstDue.size() <= 10))
+        && (!('details' in data) || (data.details is string && data.details.size() <= 400))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 300))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidRevenueContract(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'title', 'buyer', 'cpf', 'phone', 'email', 'city', 'state', 'address',
+          'postalCode', 'totalCents', 'downPaymentCents', 'interestPercent', 'finePercent',
+          'correctionIndex', 'status', 'contractDate', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'title', 'buyer', 'cpf', 'phone', 'email', 'city', 'state', 'address',
+          'postalCode', 'totalCents', 'downPaymentCents', 'interestPercent', 'finePercent',
+          'correctionIndex', 'customRatePercent', 'status', 'contractDate', 'note', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.buyer is string && data.buyer.size() >= 1 && data.buyer.size() <= 140
+        && data.cpf is string && data.cpf.size() <= 30
+        && data.phone is string && data.phone.size() <= 40
+        && data.email is string && data.email.size() <= 140
+        && data.city is string && data.city.size() <= 100
+        && data.state is string && data.state.size() <= 4
+        && data.address is string && data.address.size() <= 200
+        && data.postalCode is string && data.postalCode.size() <= 20
+        && data.totalCents is int && data.totalCents > 0
+        && data.downPaymentCents is int && data.downPaymentCents >= 0
+        && (data.interestPercent is int || data.interestPercent is float)
+        && (data.finePercent is int || data.finePercent is float)
+        && data.correctionIndex in ['Sem correção', 'IPCA', 'IGP-M', 'Personalizado']
+        && (!('customRatePercent' in data) || (data.customRatePercent is int || data.customRatePercent is float))
+        && data.status in ['Em andamento', 'Atrasado', 'Concluído', 'Pausado', 'Perdoado', 'Ajuizado', 'Renegociado']
+        && data.contractDate is string && data.contractDate.size() == 10
+        && (!('note' in data) || (data.note is string && data.note.size() <= 300));
+    }
+
+    function isValidRevenueEntry(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'title', 'category', 'dueDate', 'expectedCents',
+          'receivedDate', 'receivedCents', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'sourceId', 'contractId', 'installmentNumber', 'title', 'category',
+          'dueDate', 'expectedCents', 'receivedDate', 'receivedCents', 'agreedCents',
+          'adjustmentCents', 'accountId', 'note', 'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && (!('sourceId' in data) || (data.sourceId is string && data.sourceId.size() <= 128))
+        && (!('contractId' in data) || (data.contractId is string && data.contractId.size() <= 128))
+        && (!('installmentNumber' in data) || (data.installmentNumber is int && data.installmentNumber >= 1))
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.category is string && data.category.size() <= 60
+        && data.dueDate is string && data.dueDate.size() == 10 && data.dueDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.expectedCents is int && data.expectedCents > 0
+        && (data.receivedDate == null || (data.receivedDate is string && data.receivedDate.size() == 10))
+        && (data.receivedCents == null || (data.receivedCents is int && data.receivedCents >= 0))
+        && (!('agreedCents' in data) || (data.agreedCents is int && data.agreedCents >= 0))
+        && (!('adjustmentCents' in data) || data.adjustmentCents == null || data.adjustmentCents is int)
+        && (!('accountId' in data) || data.accountId == null || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 300))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidRevenueEvent(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'entryId', 'kind', 'reason', 'eventCreatedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'entryId', 'kind', 'reason', 'eventCreatedAt', 'beforeData', 'afterData',
+          'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.entryId is string && data.entryId.size() >= 1 && data.entryId.size() <= 128
+        && data.kind is string && data.kind.size() >= 1 && data.kind.size() <= 40
+        && data.reason is string && data.reason.size() <= 300
+        && data.eventCreatedAt is string && data.eventCreatedAt.size() <= 40
+        && (!('beforeData' in data) || data.beforeData == null || data.beforeData is map)
+        && (!('afterData' in data) || data.afterData == null || data.afterData is map)
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidAnnualYearRecord(data, userId) {
+      return data.keys().hasAll(['ownerId', 'year', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId', 'year', 'sourceName', 'archivedAt', 'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.year is int && data.year >= 2000 && data.year <= 2100
+        && (!('sourceName' in data) || (data.sourceName is string && data.sourceName.size() <= 140))
+        && (!('archivedAt' in data) || data.archivedAt == null || (data.archivedAt is string && data.archivedAt.size() <= 40))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidAnnualExpenseRow(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'year', 'creditor', 'category', 'dueDay', 'months', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'year', 'creditor', 'category', 'dueDay', 'months',
+          'expenseKind', 'expenseSource', 'annualTaxKind', 'consumptionValueType',
+          'position', 'sourceContractId', 'sourceTemplateId', 'sourceRecordId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.year is int && data.year >= 2000 && data.year <= 2100
+        && data.creditor is string && data.creditor.size() >= 1 && data.creditor.size() <= 140
+        && data.category is string && data.category.size() <= 60
+        && data.dueDay is int && data.dueDay >= 1 && data.dueDay <= 31
+        && data.months is map
+        && data.months.size() <= 12
+        && data.months.keys().hasOnly(['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'])
+        && (!('expenseKind' in data) || data.expenseKind in ['consumption', 'debt'])
+        && (!('expenseSource' in data) || data.expenseSource in ['consumption', 'contract', 'card', 'annual_tax'])
+        && (!('annualTaxKind' in data) || data.annualTaxKind == null || (data.annualTaxKind is string && data.annualTaxKind.size() <= 30))
+        && (!('consumptionValueType' in data) || data.consumptionValueType == null || (data.consumptionValueType is string && data.consumptionValueType.size() <= 30))
+        && (!('position' in data) || data.position is int)
+        && (!('sourceContractId' in data) || data.sourceContractId == null || (data.sourceContractId is string && data.sourceContractId.size() <= 128))
+        && (!('sourceTemplateId' in data) || data.sourceTemplateId == null || (data.sourceTemplateId is string && data.sourceTemplateId.size() <= 128))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidMonthlyBill(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'period', 'creditor', 'category', 'dueDate', 'expectedCents',
+          'paidDate', 'paidCents', 'isSettled', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'period', 'creditor', 'category', 'description', 'dueDate', 'expectedCents',
+          'paidDate', 'paidCents', 'isSettled', 'sourceAnnualId', 'contractId',
+          'installmentNumber', 'expenseKind', 'accountId', 'note', 'sourceRecordId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.period is string && data.period.size() == 7 && data.period.matches('^\\d{4}-\\d{2}$')
+        && data.creditor is string && data.creditor.size() >= 1 && data.creditor.size() <= 140
+        && data.category is string && data.category.size() <= 60
+        && (!('description' in data) || (data.description is string && data.description.size() <= 200))
+        && data.dueDate is string && data.dueDate.size() == 10 && data.dueDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.expectedCents is int && data.expectedCents >= 0
+        && (data.paidDate == null || (data.paidDate is string && data.paidDate.size() == 10))
+        && (data.paidCents == null || (data.paidCents is int && data.paidCents >= 0))
+        && data.isSettled is bool
+        && (!('sourceAnnualId' in data) || (data.sourceAnnualId is string && data.sourceAnnualId.size() <= 128))
+        && (!('contractId' in data) || data.contractId == null || (data.contractId is string && data.contractId.size() <= 128))
+        && (!('installmentNumber' in data) || data.installmentNumber == null || (data.installmentNumber is int && data.installmentNumber >= 0))
+        && (!('expenseKind' in data) || data.expenseKind in ['consumption', 'debt'])
+        && (!('accountId' in data) || data.accountId == null || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 300))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidPayableContract(data, userId) {
+      return data.keys().hasAll(['ownerId', 'name', 'description', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'description', 'sourceSheet', 'detailsJson',
+          'archivedAt', 'contractCreatedAt', 'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 140
+        && data.description is string && data.description.size() <= 300
+        && (!('sourceSheet' in data) || (data.sourceSheet is string && data.sourceSheet.size() <= 120))
+        && (!('detailsJson' in data) || data.detailsJson is map)
+        && (!('archivedAt' in data) || data.archivedAt == null || (data.archivedAt is string && data.archivedAt.size() <= 40))
+        && (!('contractCreatedAt' in data) || (data.contractCreatedAt is string && data.contractCreatedAt.size() <= 40))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidPayableInstallment(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'contractId', 'number', 'dueDate', 'expectedCents',
+          'isSettled', 'paidCents', 'paidDate', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'contractId', 'number', 'dueDate', 'expectedCents',
+          'isSettled', 'paidCents', 'paidDate', 'note', 'accountId',
+          'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.contractId)
+        && data.number is int && data.number >= 1
+        && data.dueDate is string && data.dueDate.size() == 10 && data.dueDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.expectedCents is int && data.expectedCents >= 0
+        && data.isSettled is bool
+        && (data.paidCents == null || (data.paidCents is int && data.paidCents >= 0))
+        && (data.paidDate == null || (data.paidDate is string && data.paidDate.size() == 10))
+        && (!('note' in data) || data.note == null || (data.note is string && data.note.size() <= 300))
+        && (!('accountId' in data) || data.accountId == null || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidCardMonthSnapshot(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'accountId', 'period', 'capturedAt', 'closingDate', 'dueDate',
+          'invoiceCents', 'providerInvoiceId', 'totalLimitCents', 'availableLimitCents',
+          'usedLimitCents', 'transactions', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'accountId', 'accountName', 'isUnlinked', 'period', 'capturedAt',
+          'closingDate', 'dueDate', 'invoiceCents', 'providerInvoiceId', 'totalLimitCents',
+          'availableLimitCents', 'usedLimitCents', 'transactions', 'sourceRecordId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.accountId is string && data.accountId.size() >= 1 && data.accountId.size() <= 128
+        && (!('accountName' in data) || (data.accountName is string && data.accountName.size() <= 120))
+        && (!('isUnlinked' in data) || data.isUnlinked is bool)
+        && data.period is string && data.period.size() == 7 && data.period.matches('^\\d{4}-\\d{2}$')
+        && data.capturedAt is string && data.capturedAt.size() <= 40
+        && (data.closingDate == null || (data.closingDate is string && data.closingDate.size() == 10))
+        && (data.dueDate == null || (data.dueDate is string && data.dueDate.size() == 10))
+        && (data.invoiceCents == null || data.invoiceCents is int)
+        && (data.providerInvoiceId == null || (data.providerInvoiceId is string && data.providerInvoiceId.size() <= 128))
+        && (data.totalLimitCents == null || data.totalLimitCents is int)
+        && (data.availableLimitCents == null || data.availableLimitCents is int)
+        && (data.usedLimitCents == null || data.usedLimitCents is int)
+        && data.transactions is list
+        && data.transactions.size() <= 200
+        && (data.transactions.size() == 0 || data.transactions[0] is map)
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidPersonalAgenda(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'kind', 'title', 'startDate', 'time', 'description',
+          'recurrence', 'favorite', 'reminder', 'items', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'kind', 'title', 'startDate', 'time', 'endTime', 'description',
+          'recurrence', 'favorite', 'reminder', 'items', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.kind in ['birthday', 'work', 'appointment', 'event', 'tasks']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.startDate is string && data.startDate.size() == 10 && data.startDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.time is string && data.time.size() <= 10
+        && (!('endTime' in data) || (data.endTime is string && data.endTime.size() <= 10))
+        && data.description is string && data.description.size() <= 500
+        && data.recurrence in ['none', 'daily', '12x36', 'weekly', 'monthly', 'yearly']
+        && data.favorite is bool
+        && data.reminder is bool
+        && data.items is list
+        && data.items.size() <= 30
+        && (data.items.size() == 0 || data.items[0] is map);
+    }
+
+    function isValidAgendaCheck(data, userId) {
+      return data.keys().hasAll(['ownerId', 'checkKey', 'done', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'checkKey', 'done', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && data.checkKey is string && data.checkKey.size() >= 3 && data.checkKey.size() <= 180
+        && data.done is bool;
+    }
+
+    function isValidShoppingItem(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'category', 'quantity', 'unitPriceCents', 'checked', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'category', 'quantity', 'unitPriceCents', 'checked', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 140
+        && data.category is string && data.category.size() <= 60
+        && data.quantity is int && data.quantity >= 1 && data.quantity <= 10000
+        && data.unitPriceCents is int && data.unitPriceCents >= 0
+        && data.checked is bool;
+    }
+
+    function isValidVehicle(data, userId) {
+      return data.keys().hasAll(['ownerId', 'name', 'plate', 'model', 'odometerKm', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'plate', 'brand', 'model', 'year', 'fuelType', 'odometerKm',
+          'status', 'assignedDriverId', 'renavam', 'stateUf', 'tankCapacityLiters',
+          'fipeValue', 'monthlyFixedCost', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 100
+        && data.plate is string && data.plate.size() >= 1 && data.plate.size() <= 20
+        && (!('brand' in data) || (data.brand is string && data.brand.size() <= 60))
+        && data.model is string && data.model.size() >= 1 && data.model.size() <= 120
+        && (!('year' in data) || (data.year is int && data.year >= 1950 && data.year <= 2100))
+        && (!('fuelType' in data) || (data.fuelType in ['GASOLINA', 'ETANOL', 'DIESEL', 'GNV', 'ELETRICO', 'FLEX']))
+        && (data.odometerKm is int || data.odometerKm is float) && data.odometerKm >= 0
+        && (!('status' in data) || (data.status in ['ATIVO', 'MANUTENCAO', 'INATIVO']))
+        && (!('assignedDriverId' in data) || (data.assignedDriverId is string && data.assignedDriverId.size() <= 128))
+        && (!('renavam' in data) || (data.renavam is string && data.renavam.size() <= 30))
+        && (!('stateUf' in data) || (data.stateUf is string && data.stateUf.size() <= 4))
+        && (!('tankCapacityLiters' in data) || ((data.tankCapacityLiters is int || data.tankCapacityLiters is float) && data.tankCapacityLiters >= 0))
+        && (!('fipeValue' in data) || ((data.fipeValue is int || data.fipeValue is float) && data.fipeValue >= 0))
+        && (!('monthlyFixedCost' in data) || ((data.monthlyFixedCost is int || data.monthlyFixedCost is float) && data.monthlyFixedCost >= 0))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 400));
+    }
+
+    function isValidGarageDriver(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'cnhNumber', 'cnhCategory', 'cnhExpiry',
+          'allowedVehicleIds', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'cnhNumber', 'cnhCategory', 'cnhExpiry',
+          'phone', 'allowedVehicleIds', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.cnhNumber is string && data.cnhNumber.size() >= 1 && data.cnhNumber.size() <= 20
+        && data.cnhCategory is string && data.cnhCategory.size() >= 1 && data.cnhCategory.size() <= 10
+        && data.cnhExpiry is string && data.cnhExpiry.size() == 10 && data.cnhExpiry.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 30))
+        && data.allowedVehicleIds is list
+        && data.allowedVehicleIds.size() <= 30
+        && (data.allowedVehicleIds.size() == 0 || (data.allowedVehicleIds[0] is string && data.allowedVehicleIds[0].size() <= 128))
+        && data.active is bool;
+    }
+
+    function isValidGarageFueling(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'date', 'odometer', 'fuelType',
+          'quantity', 'unitPrice', 'totalCost', 'fullTank', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'driverId', 'date', 'odometer', 'fuelType',
+          'quantity', 'unitPrice', 'totalCost', 'fullTank', 'stationName',
+          'nfceKey', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && (!('driverId' in data) || (data.driverId is string && data.driverId.size() <= 128))
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (data.odometer is int || data.odometer is float) && data.odometer >= 0
+        && data.fuelType in ['GASOLINA', 'ETANOL', 'DIESEL', 'GNV', 'ELETRICO', 'FLEX']
+        && (data.quantity is int || data.quantity is float) && data.quantity > 0
+        && (data.unitPrice is int || data.unitPrice is float) && data.unitPrice > 0
+        && (data.totalCost is int || data.totalCost is float) && data.totalCost > 0
+        && data.fullTank is bool
+        && (!('stationName' in data) || (data.stationName is string && data.stationName.size() <= 120))
+        && (!('nfceKey' in data) || (data.nfceKey is string && data.nfceKey.size() <= 80))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300));
+    }
+
+    function isValidGarageMaintenance(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'type', 'status', 'date', 'odometer',
+          'category', 'partsCost', 'laborCost', 'totalCost', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'driverId', 'type', 'status', 'originChecklistId',
+          'date', 'odometer', 'category', 'providerName', 'partsCost', 'laborCost',
+          'totalCost', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && (!('driverId' in data) || (data.driverId is string && data.driverId.size() <= 128))
+        && data.type in ['PREVENTIVA', 'CORRETIVA']
+        && data.status in ['ABERTA', 'EM_EXECUCAO', 'CONCLUIDA']
+        && (!('originChecklistId' in data) || (data.originChecklistId is string && data.originChecklistId.size() <= 128))
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (data.odometer is int || data.odometer is float) && data.odometer >= 0
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 100
+        && (!('providerName' in data) || (data.providerName is string && data.providerName.size() <= 120))
+        && (data.partsCost is int || data.partsCost is float) && data.partsCost >= 0
+        && (data.laborCost is int || data.laborCost is float) && data.laborCost >= 0
+        && (data.totalCost is int || data.totalCost is float) && data.totalCost >= 0
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 400));
+    }
+
+    function isValidGarageExpense(data, userId) {
+      return data.keys().hasAll(['ownerId', 'vehicleId', 'category', 'date', 'amount', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'driverId', 'category', 'date', 'amount',
+          'description', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && (!('driverId' in data) || (data.driverId is string && data.driverId.size() <= 128))
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (data.amount is int || data.amount is float) && data.amount > 0
+        && (!('description' in data) || (data.description is string && data.description.size() <= 240));
+    }
+
+    function isValidGarageFine(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'date', 'infractionCode', 'description',
+          'points', 'amount', 'sneDiscountApplied', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'driverId', 'date', 'time', 'infractionCode',
+          'description', 'location', 'points', 'amount', 'sneDiscountApplied',
+          'driverIndicationDeadline', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && (!('driverId' in data) || (data.driverId is string && data.driverId.size() <= 128))
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (!('time' in data) || (data.time is string && data.time.size() <= 10))
+        && data.infractionCode is string && data.infractionCode.size() >= 1 && data.infractionCode.size() <= 30
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 200
+        && (!('location' in data) || (data.location is string && data.location.size() <= 160))
+        && data.points is int && data.points >= 0 && data.points <= 21
+        && (data.amount is int || data.amount is float) && data.amount > 0
+        && data.sneDiscountApplied is bool
+        && (!('driverIndicationDeadline' in data) || (data.driverIndicationDeadline is string && data.driverIndicationDeadline.size() <= 10))
+        && data.status in ['PENDENTE', 'INDICADO', 'PAGA', 'RECORRIDA'];
+    }
+
+    function isValidGarageDocument(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'docType', 'referenceYear', 'dueDate',
+          'amount', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'docType', 'referenceYear', 'dueDate', 'amount',
+          'stateUf', 'providerOrAuthority', 'policyOrCode', 'status', 'paidAt',
+          'autoGenerated', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && data.docType in ['CRLV', 'IPVA', 'SEGURO', 'VISTORIA']
+        && data.referenceYear is int && data.referenceYear >= 2000 && data.referenceYear <= 2100
+        && data.dueDate is string && data.dueDate.size() == 10 && data.dueDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (data.amount is int || data.amount is float) && data.amount >= 0
+        && (!('stateUf' in data) || (data.stateUf is string && data.stateUf.size() <= 4))
+        && (!('providerOrAuthority' in data) || (data.providerOrAuthority is string && data.providerOrAuthority.size() <= 120))
+        && (!('policyOrCode' in data) || (data.policyOrCode is string && data.policyOrCode.size() <= 120))
+        && data.status in ['PENDENTE', 'PAGO', 'ISENTO']
+        && (!('paidAt' in data) || (data.paidAt is string && data.paidAt.size() <= 10))
+        && (!('autoGenerated' in data) || data.autoGenerated is bool)
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300));
+    }
+
+    function isValidGarageChecklist(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'date', 'odometer', 'items', 'hasIssues', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'driverId', 'date', 'odometer', 'items',
+          'hasIssues', 'generatedMaintenanceId', 'generalNotes', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && (!('driverId' in data) || (data.driverId is string && data.driverId.size() <= 128))
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (data.odometer is int || data.odometer is float) && data.odometer >= 0
+        && data.items is list
+        && data.items.size() >= 1 && data.items.size() <= 25
+        && data.items[0] is map
+        && data.hasIssues is bool
+        && (!('generatedMaintenanceId' in data) || (data.generatedMaintenanceId is string && data.generatedMaintenanceId.size() <= 128))
+        && (!('generalNotes' in data) || (data.generalNotes is string && data.generalNotes.size() <= 400));
+    }
+
+    function isValidGarageRoute(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'date', 'origin', 'destination',
+          'startOdometer', 'endOdometer', 'distanceKm', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'driverId', 'date', 'origin', 'destination',
+          'startOdometer', 'endOdometer', 'distanceKm', 'estimatedKm', 'purpose',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && (!('driverId' in data) || (data.driverId is string && data.driverId.size() <= 128))
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.origin is string && data.origin.size() >= 1 && data.origin.size() <= 120
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 120
+        && (data.startOdometer is int || data.startOdometer is float) && data.startOdometer >= 0
+        && (data.endOdometer is int || data.endOdometer is float) && data.endOdometer >= data.startOdometer
+        && (data.distanceKm is int || data.distanceKm is float) && data.distanceKm >= 0
+        && (!('estimatedKm' in data) || ((data.estimatedKm is int || data.estimatedKm is float) && data.estimatedKm >= 0))
+        && (!('purpose' in data) || (data.purpose is string && data.purpose.size() <= 160));
+    }
+
+    function isValidGarageReminder(data, userId) {
+      return data.keys().hasAll(['ownerId', 'vehicleId', 'title', 'category', 'completed', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'title', 'category', 'dueDate', 'dueOdometer',
+          'completed', 'completedAt', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.category in ['MANUTENCAO', 'DOCUMENTACAO', 'SEGURO', 'OUTRO']
+        && (!('dueDate' in data) || (data.dueDate is string && data.dueDate.size() <= 10))
+        && (!('dueOdometer' in data) || ((data.dueOdometer is int || data.dueOdometer is float) && data.dueOdometer >= 0))
+        && data.completed is bool
+        && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() <= 10))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 300));
+    }
+
+    function isValidFuelLog(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'vehicleId', 'date', 'liters', 'totalCents', 'odometerKm', 'fuelType', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'vehicleId', 'date', 'liters', 'totalCents', 'odometerKm', 'fuelType', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.vehicleId)
+        && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (data.liters is int || data.liters is float) && data.liters > 0
+        && data.totalCents is int && data.totalCents >= 0
+        && (data.odometerKm is int || data.odometerKm is float) && data.odometerKm >= 0
+        && data.fuelType in ['Gasolina', 'Etanol', 'Diesel'];
+    }
+
+    function isValidTripPlan(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'destination', 'startDate', 'endDate', 'budgetCents',
+          'spentCents', 'notes', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'destination', 'startDate', 'endDate', 'budgetCents',
+          'spentCents', 'notes', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.destination is string && data.destination.size() >= 1 && data.destination.size() <= 140
+        && data.startDate is string && data.startDate.size() == 10 && data.startDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.endDate is string && data.endDate.size() == 10 && data.endDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.budgetCents is int && data.budgetCents >= 0
+        && data.spentCents is int && data.spentCents >= 0
+        && data.notes is string && data.notes.size() <= 400
+        && data.status in ['Planejada', 'Em curso', 'Concluída'];
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && hasValidTimestampsOnCreate(incoming())
+        && isValidUserProfile(incoming(), userId);
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && hasImmutableCoreOnUpdate()
+        && (
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'photoUrl', 'city', 'state', 'pixRecipient', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['selectedLogoId', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['watchlistTickers', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'photoUrl', 'city', 'state', 'selectedLogoId', 'pixRecipient', 'watchlistTickers', 'updatedAt'])
+        );
+      allow delete: if isValidId(userId) && isOwner(userId);
+
+      match /banks/{bankId} {
+        allow get: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(bankId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidBankAccount(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(bankId) && isOwner(userId)
+          && isValidBankAccount(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balanceCents', 'name', 'institution', 'color', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['institution', 'name', 'accountType', 'number', 'balanceCents', 'color', 'sourceRecordId', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /cards/{cardId} {
+        allow get: if isValidId(userId) && isValidId(cardId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(cardId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCreditCard(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(cardId) && isOwner(userId)
+          && isValidCreditCard(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['manualLimitCents', 'manualUsedCents', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['creditLimitCents', 'availableCents', 'closingDay', 'dueDay', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['institution', 'name', 'brand', 'number', 'creditLimitCents', 'availableCents', 'closingDay', 'dueDay', 'linkedAnnualExpenseId', 'sourceRecordId', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(cardId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /cardMonthSnapshots/{snapshotId} {
+        allow get: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCardMonthSnapshot(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId)
+          && isValidCardMonthSnapshot(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'accountId', 'accountName', 'isUnlinked', 'period', 'capturedAt', 'closingDate', 'dueDate',
+            'invoiceCents', 'providerInvoiceId', 'totalLimitCents', 'availableLimitCents',
+            'usedLimitCents', 'transactions', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /transactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidWalletTransaction(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && isValidWalletTransaction(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['description', 'amountCents', 'date', 'category', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueSources/{sourceId} {
+        allow get: if isValidId(userId) && isValidId(sourceId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(sourceId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueSource(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(sourceId) && isOwner(userId)
+          && isValidRevenueSource(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'category', 'expectedCents', 'dueDay', 'recurrence', 'active',
+            'firstDue', 'details', 'note', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(sourceId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueContracts/{contractId} {
+        allow get: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueContract(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && isValidRevenueContract(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            (existing().status != 'Concluído' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['note', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueEntries/{entryId} {
+        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueEntry(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && isValidRevenueEntry(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['receivedCents', 'receivedDate', 'note', 'accountId', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'sourceId', 'contractId', 'installmentNumber', 'title', 'category',
+              'dueDate', 'expectedCents', 'receivedDate', 'receivedCents', 'agreedCents',
+              'adjustmentCents', 'accountId', 'note', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueEvents/{eventId} {
+        allow get: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueEvent(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && isValidRevenueEvent(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'entryId', 'kind', 'reason', 'eventCreatedAt', 'beforeData', 'afterData', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /annualYears/{yearId} {
+        allow get: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAnnualYearRecord(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
+          && isValidAnnualYearRecord(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['sourceName', 'archivedAt', 'sourceRecordId', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /annualExpenses/{rowId} {
+        allow get: if isValidId(userId) && isValidId(rowId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(rowId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAnnualExpenseRow(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(rowId) && isOwner(userId)
+          && isValidAnnualExpenseRow(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['months', 'creditor', 'category', 'dueDay', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'year', 'creditor', 'category', 'dueDay', 'months',
+              'expenseKind', 'expenseSource', 'annualTaxKind', 'consumptionValueType',
+              'position', 'sourceContractId', 'sourceTemplateId', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(rowId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /monthlyBills/{billId} {
+        allow get: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(billId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidMonthlyBill(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(billId) && isOwner(userId)
+          && isValidMonthlyBill(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'note', 'accountId', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['expectedCents', 'paidCents', 'paidDate', 'isSettled', 'note', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'period', 'creditor', 'category', 'description', 'dueDate', 'expectedCents',
+              'paidDate', 'paidCents', 'isSettled', 'sourceAnnualId', 'contractId',
+              'installmentNumber', 'expenseKind', 'accountId', 'note', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /payableContracts/{contractId} {
+        allow get: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPayableContract(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && isValidPayableContract(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'description', 'sourceSheet', 'detailsJson',
+            'archivedAt', 'contractCreatedAt', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /payableInstallments/{installmentId} {
+        allow get: if isValidId(userId) && isValidId(installmentId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(installmentId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPayableInstallment(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/payableContracts/$(incoming().contractId));
+        allow update: if isValidId(userId) && isValidId(installmentId) && isOwner(userId)
+          && isValidPayableInstallment(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().contractId == existing().contractId
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'note', 'accountId', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'number', 'dueDate', 'expectedCents', 'isSettled', 'paidCents',
+              'paidDate', 'note', 'accountId', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(installmentId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /personalAgenda/{agendaId} {
+        allow get: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPersonalAgenda(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
+          && isValidPersonalAgenda(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['kind', 'title', 'startDate', 'time', 'endTime', 'description', 'recurrence', 'favorite', 'reminder', 'items', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaChecks/{checkId} {
+        allow get: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checkId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaCheck(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(checkId) && isOwner(userId)
+          && isValidAgendaCheck(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['done', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /shoppingList/{itemId} {
+        allow get: if isValidId(userId) && isValidId(itemId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(itemId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidShoppingItem(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(itemId) && isOwner(userId)
+          && isValidShoppingItem(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['checked', 'name', 'quantity', 'unitPriceCents', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(itemId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /vehicles/{vehicleId} {
+        allow get: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidVehicle(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId)
+          && isValidVehicle(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['odometerKm', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'plate', 'brand', 'model', 'year', 'fuelType', 'odometerKm',
+              'status', 'assignedDriverId', 'renavam', 'stateUf', 'tankCapacityLiters',
+              'fipeValue', 'monthlyFixedCost', 'notes', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageDrivers/{driverId} {
+        allow get: if isValidId(userId) && isValidId(driverId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(driverId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageDriver(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(driverId) && isOwner(userId)
+          && isValidGarageDriver(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'cnhNumber', 'cnhCategory', 'cnhExpiry', 'phone', 'allowedVehicleIds', 'active', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(driverId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageFuelings/{fuelingId} {
+        allow get: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageFueling(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId)
+          && isValidGarageFueling(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'date', 'odometer', 'fuelType', 'quantity', 'unitPrice', 'totalCost',
+            'fullTank', 'stationName', 'nfceKey', 'notes', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageMaintenances/{maintId} {
+        allow get: if isValidId(userId) && isValidId(maintId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(maintId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageMaintenance(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(maintId) && isOwner(userId)
+          && isValidGarageMaintenance(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && (
+            (existing().status != 'CONCLUIDA' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(maintId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageExpenses/{expId} {
+        allow get: if isValidId(userId) && isValidId(expId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(expId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageExpense(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(expId) && isOwner(userId)
+          && isValidGarageExpense(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'date', 'amount', 'description', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(expId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageFines/{fineId} {
+        allow get: if isValidId(userId) && isValidId(fineId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(fineId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageFine(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(fineId) && isOwner(userId)
+          && isValidGarageFine(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'sneDiscountApplied', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(fineId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageDocuments/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(docId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageDocument(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(docId) && isOwner(userId)
+          && isValidGarageDocument(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidAt', 'amount', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(docId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageChecklists/{checklistId} {
+        allow get: if isValidId(userId) && isValidId(checklistId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checklistId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageChecklist(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(checklistId) && isOwner(userId)
+          && isValidGarageChecklist(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['generalNotes', 'generatedMaintenanceId', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(checklistId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageRoutes/{routeId} {
+        allow get: if isValidId(userId) && isValidId(routeId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(routeId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageRoute(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(routeId) && isOwner(userId)
+          && isValidGarageRoute(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['purpose', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(routeId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageReminders/{reminderId} {
+        allow get: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(reminderId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageReminder(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(reminderId) && isOwner(userId)
+          && isValidGarageReminder(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'completedAt', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /fuelLogs/{logId} {
+        allow get: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(logId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidFuelLog(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(logId) && isOwner(userId)
+          && isValidFuelLog(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['liters', 'totalCents', 'odometerKm', 'date', 'fuelType', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /trips/{tripId} {
+        allow get: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(tripId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidTripPlan(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(tripId) && isOwner(userId)
+          && isValidTripPlan(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            (existing().status != 'Concluída' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'spentCents', 'notes', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+    }
+  }
+}

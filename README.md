@@ -1,11 +1,12 @@
-<div align="center">
+# Órion — Gestão Financeira & Pessoal
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+Aplicação completa em React, TypeScript, Tailwind CSS v4 e Express para gestão financeira pessoal, controle de receitas e contratos parcelados com emissão de faturas PDF/Pix, grade anual de despesas, carteira de contas e cartões, cotações da B3 e moedas, agenda integrada de Brasília/DF, lista de compras e controle de veículos e viagens.
 
-  <h1>Built with AI Studio</h2>
+## Desenvolvimento
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+```sh
+npm install
+npm run dev
+```
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
-
-</div>
+O servidor inicia em `http://0.0.0.0:3000`.

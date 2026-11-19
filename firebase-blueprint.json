@@ -1,0 +1,722 @@
+{
+  "entities": {
+    "UserWorkspaceProfile": {
+      "title": "UserWorkspaceProfile",
+      "description": "Private user profile, branding logo selection, Pix recipient settings, and watchlist tickers.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "city": { "type": "string", "maxLength": 100 },
+        "state": { "type": "string", "maxLength": 4 },
+        "selectedLogoId": { "type": "string", "enum": ["nexo", "apice", "prisma", "vortice", "orbita"] },
+        "pixRecipient": { "type": "object" },
+        "watchlistTickers": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "email", "city", "state", "selectedLogoId", "pixRecipient", "watchlistTickers", "createdAt", "updatedAt"]
+    },
+    "BankAccount": {
+      "title": "BankAccount",
+      "description": "User bank account for balance and transaction tracking.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "institution": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "accountType": { "type": "string", "enum": ["CHECKING", "SAVINGS"] },
+        "number": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "balanceCents": { "type": "integer" },
+        "color": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "institution", "name", "accountType", "number", "balanceCents", "color", "createdAt", "updatedAt"]
+    },
+    "CreditCardAccount": {
+      "title": "CreditCardAccount",
+      "description": "User credit card account with limits and statement dates.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "institution": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "brand": { "type": "string", "enum": ["VISA", "MASTERCARD", "ELO", "AMEX", "HIPERCARD", "OTHER"] },
+        "number": { "type": "string", "minLength": 1, "maxLength": 10 },
+        "creditLimitCents": { "type": "integer" },
+        "availableCents": { "type": "integer" },
+        "closingDay": { "type": "integer" },
+        "dueDay": { "type": "integer" },
+        "manualLimitCents": { "type": "integer" },
+        "manualUsedCents": { "type": "integer" },
+        "linkedAnnualExpenseId": { "type": "string", "maxLength": 128 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "institution", "name", "brand", "number", "creditLimitCents", "availableCents", "closingDay", "dueDay", "createdAt", "updatedAt"]
+    },
+    "WalletTransaction": {
+      "title": "WalletTransaction",
+      "description": "Financial ledger entry linked to a bank or credit card.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "accountType": { "type": "string", "enum": ["BANK", "CREDIT"] },
+        "accountName": { "type": "string", "maxLength": 100 },
+        "institution": { "type": "string", "maxLength": 80 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "amountCents": { "type": "integer" },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "category": { "type": "string", "maxLength": 60 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "accountId", "accountType", "accountName", "institution", "description", "amountCents", "date", "category", "createdAt", "updatedAt"]
+    },
+    "RevenueSource": {
+      "title": "RevenueSource",
+      "description": "Recurring or single source of expected income.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "category": { "type": "string", "maxLength": 60 },
+        "expectedCents": { "type": "integer" },
+        "dueDay": { "type": "integer" },
+        "recurrence": { "type": "string", "enum": ["monthly", "single"] },
+        "active": { "type": "boolean" },
+        "firstDue": { "type": "string", "maxLength": 10 },
+        "details": { "type": "string", "maxLength": 400 },
+        "note": { "type": "string", "maxLength": 300 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "category", "expectedCents", "dueDay", "recurrence", "active", "createdAt", "updatedAt"]
+    },
+    "RevenueContract": {
+      "title": "RevenueContract",
+      "description": "Installment receivables contract with buyer metadata and monetary correction rules.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "buyer": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "cpf": { "type": "string", "maxLength": 30 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "email": { "type": "string", "maxLength": 140 },
+        "city": { "type": "string", "maxLength": 100 },
+        "state": { "type": "string", "maxLength": 4 },
+        "address": { "type": "string", "maxLength": 200 },
+        "postalCode": { "type": "string", "maxLength": 20 },
+        "totalCents": { "type": "integer" },
+        "downPaymentCents": { "type": "integer" },
+        "interestPercent": { "type": "number" },
+        "finePercent": { "type": "number" },
+        "correctionIndex": { "type": "string", "enum": ["Sem correção", "IPCA", "IGP-M", "Personalizado"] },
+        "customRatePercent": { "type": "number" },
+        "status": { "type": "string", "enum": ["Em andamento", "Atrasado", "Concluído", "Pausado", "Perdoado", "Ajuizado", "Renegociado"] },
+        "contractDate": { "type": "string", "maxLength": 10 },
+        "note": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "buyer", "cpf", "phone", "email", "city", "state", "address", "postalCode", "totalCents", "downPaymentCents", "interestPercent", "finePercent", "correctionIndex", "status", "contractDate", "createdAt", "updatedAt"]
+    },
+    "RevenueEntry": {
+      "title": "RevenueEntry",
+      "description": "Individual receivable entry from a source, contract installment, or ad-hoc revenue.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sourceId": { "type": "string", "maxLength": 128 },
+        "contractId": { "type": "string", "maxLength": 128 },
+        "installmentNumber": { "type": "integer" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "category": { "type": "string", "maxLength": 60 },
+        "dueDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "expectedCents": { "type": "integer" },
+        "receivedDate": { "type": "string", "maxLength": 10 },
+        "receivedCents": { "type": "integer" },
+        "agreedCents": { "type": "integer" },
+        "adjustmentCents": { "type": "integer" },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "note": { "type": "string", "maxLength": 300 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "title", "category", "dueDate", "expectedCents", "receivedDate", "receivedCents", "createdAt", "updatedAt"]
+    },
+    "RevenueEvent": {
+      "title": "RevenueEvent",
+      "description": "Append-only receipt and correction audit event linked to a revenue entry.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "entryId": { "type": "string", "maxLength": 128 },
+        "kind": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "reason": { "type": "string", "maxLength": 300 },
+        "eventCreatedAt": { "type": "string", "maxLength": 40 },
+        "beforeData": { "type": "object" },
+        "afterData": { "type": "object" },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "entryId", "kind", "reason", "eventCreatedAt", "createdAt", "updatedAt"]
+    },
+    "AnnualYearRecord": {
+      "title": "AnnualYearRecord",
+      "description": "Registered fiscal exercise year.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "year": { "type": "integer" },
+        "sourceName": { "type": "string", "maxLength": 140 },
+        "archivedAt": { "type": "string", "maxLength": 40 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "year", "createdAt", "updatedAt"]
+    },
+    "AnnualExpenseRow": {
+      "title": "AnnualExpenseRow",
+      "description": "Annual expense creditor row with monthly breakdown cells.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "year": { "type": "integer" },
+        "creditor": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "category": { "type": "string", "maxLength": 60 },
+        "dueDay": { "type": "integer" },
+        "months": { "type": "object" },
+        "expenseKind": { "type": "string", "enum": ["consumption", "debt"] },
+        "expenseSource": { "type": "string", "enum": ["consumption", "contract", "card", "annual_tax"] },
+        "annualTaxKind": { "type": "string", "maxLength": 30 },
+        "consumptionValueType": { "type": "string", "maxLength": 30 },
+        "position": { "type": "integer" },
+        "sourceContractId": { "type": "string", "maxLength": 128 },
+        "sourceTemplateId": { "type": "string", "maxLength": 128 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "year", "creditor", "category", "dueDay", "months", "createdAt", "updatedAt"]
+    },
+    "MonthlyBill": {
+      "title": "MonthlyBill",
+      "description": "Monthly expense obligation with partial or full settlement tracking.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "period": { "type": "string", "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "creditor": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "category": { "type": "string", "maxLength": 60 },
+        "description": { "type": "string", "maxLength": 200 },
+        "dueDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "expectedCents": { "type": "integer" },
+        "paidDate": { "type": "string", "maxLength": 10 },
+        "paidCents": { "type": "integer" },
+        "isSettled": { "type": "boolean" },
+        "sourceAnnualId": { "type": "string", "maxLength": 128 },
+        "contractId": { "type": "string", "maxLength": 128 },
+        "installmentNumber": { "type": "integer" },
+        "expenseKind": { "type": "string", "enum": ["consumption", "debt"] },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "note": { "type": "string", "maxLength": 300 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "period", "creditor", "category", "dueDate", "expectedCents", "paidDate", "paidCents", "isSettled", "createdAt", "updatedAt"]
+    },
+    "PayableContract": {
+      "title": "PayableContract",
+      "description": "Installment debt/payable agreement with creditor metadata and agreement totals.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "description": { "type": "string", "maxLength": 300 },
+        "sourceSheet": { "type": "string", "maxLength": 120 },
+        "detailsJson": { "type": "object" },
+        "archivedAt": { "type": "string", "maxLength": 40 },
+        "contractCreatedAt": { "type": "string", "maxLength": 40 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "description", "createdAt", "updatedAt"]
+    },
+    "PayableInstallment": {
+      "title": "PayableInstallment",
+      "description": "Installment belonging to a payable contract.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "contractId": { "type": "string", "maxLength": 128 },
+        "number": { "type": "integer" },
+        "dueDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "expectedCents": { "type": "integer" },
+        "isSettled": { "type": "boolean" },
+        "paidCents": { "type": "integer" },
+        "paidDate": { "type": "string", "maxLength": 10 },
+        "note": { "type": "string", "maxLength": 300 },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "contractId", "number", "dueDate", "expectedCents", "isSettled", "paidCents", "paidDate", "createdAt", "updatedAt"]
+    },
+    "CardMonthSnapshot": {
+      "title": "CardMonthSnapshot",
+      "description": "Point-in-time monthly snapshot captured from card or account profile.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "accountName": { "type": "string", "maxLength": 120 },
+        "isUnlinked": { "type": "boolean" },
+        "period": { "type": "string", "maxLength": 7, "pattern": "^\\d{4}-\\d{2}$" },
+        "capturedAt": { "type": "string", "maxLength": 40 },
+        "closingDate": { "type": "string", "maxLength": 10 },
+        "dueDate": { "type": "string", "maxLength": 10 },
+        "invoiceCents": { "type": "integer" },
+        "providerInvoiceId": { "type": "string", "maxLength": 128 },
+        "totalLimitCents": { "type": "integer" },
+        "availableLimitCents": { "type": "integer" },
+        "usedLimitCents": { "type": "integer" },
+        "transactions": { "type": "array" },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "accountId", "period", "capturedAt", "closingDate", "dueDate", "invoiceCents", "providerInvoiceId", "totalLimitCents", "availableLimitCents", "usedLimitCents", "transactions", "createdAt", "updatedAt"]
+    },
+    "PersonalAgendaRecord": {
+      "title": "PersonalAgendaRecord",
+      "description": "Personal schedule event, shift, birthday, or checklist task.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "kind": { "type": "string", "enum": ["birthday", "work", "appointment", "event", "tasks"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "startDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "time": { "type": "string", "maxLength": 10 },
+        "endTime": { "type": "string", "maxLength": 10 },
+        "description": { "type": "string", "maxLength": 500 },
+        "recurrence": { "type": "string", "enum": ["none", "daily", "12x36", "weekly", "monthly", "yearly"] },
+        "favorite": { "type": "boolean" },
+        "reminder": { "type": "boolean" },
+        "items": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "kind", "title", "startDate", "time", "description", "recurrence", "favorite", "reminder", "items", "createdAt", "updatedAt"]
+    },
+    "AgendaOccurrenceCheck": {
+      "title": "AgendaOccurrenceCheck",
+      "description": "Per-occurrence completion state for recurring personal agenda checklists.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "checkKey": { "type": "string", "minLength": 3, "maxLength": 180 },
+        "done": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "checkKey", "done", "createdAt", "updatedAt"]
+    },
+    "ShoppingItem": {
+      "title": "ShoppingItem",
+      "description": "Domestic shopping list item with quantity and unit price in cents.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "category": { "type": "string", "maxLength": 60 },
+        "quantity": { "type": "integer" },
+        "unitPriceCents": { "type": "integer" },
+        "checked": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "category", "quantity", "unitPriceCents", "checked", "createdAt", "updatedAt"]
+    },
+    "VehicleRecord": {
+      "title": "VehicleRecord",
+      "description": "Personal registered vehicle with plate, brand, model, year, fuel type, odometer, and optional FIPE/fixed cost metadata.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "plate": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "brand": { "type": "string", "maxLength": 60 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "year": { "type": "integer" },
+        "fuelType": { "type": "string", "enum": ["GASOLINA", "ETANOL", "DIESEL", "GNV", "ELETRICO", "FLEX"] },
+        "odometerKm": { "type": "number" },
+        "status": { "type": "string", "enum": ["ATIVO", "MANUTENCAO", "INATIVO"] },
+        "assignedDriverId": { "type": "string", "maxLength": 128 },
+        "renavam": { "type": "string", "maxLength": 30 },
+        "stateUf": { "type": "string", "maxLength": 4 },
+        "tankCapacityLiters": { "type": "number" },
+        "fipeValue": { "type": "number" },
+        "monthlyFixedCost": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "plate", "model", "odometerKm", "createdAt", "updatedAt"]
+    },
+    "GarageDriver": {
+      "title": "GarageDriver",
+      "description": "Personal or family driver profile with CNH license tracking.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "cnhNumber": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "cnhCategory": { "type": "string", "minLength": 1, "maxLength": 10 },
+        "cnhExpiry": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "phone": { "type": "string", "maxLength": 30 },
+        "allowedVehicleIds": { "type": "array" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "cnhNumber", "cnhCategory", "cnhExpiry", "allowedVehicleIds", "active", "createdAt", "updatedAt"]
+    },
+    "GarageFueling": {
+      "title": "GarageFueling",
+      "description": "Personal vehicle fueling entry supporting full-tank consumption calculation.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "odometer": { "type": "number" },
+        "fuelType": { "type": "string", "enum": ["GASOLINA", "ETANOL", "DIESEL", "GNV", "ELETRICO", "FLEX"] },
+        "quantity": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "fullTank": { "type": "boolean" },
+        "stationName": { "type": "string", "maxLength": 120 },
+        "nfceKey": { "type": "string", "maxLength": 80 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "date", "odometer", "fuelType", "quantity", "unitPrice", "totalCost", "fullTank", "createdAt", "updatedAt"]
+    },
+    "GarageMaintenance": {
+      "title": "GarageMaintenance",
+      "description": "Personal preventive or corrective vehicle maintenance record.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "enum": ["PREVENTIVA", "CORRETIVA"] },
+        "status": { "type": "string", "enum": ["ABERTA", "EM_EXECUCAO", "CONCLUIDA"] },
+        "originChecklistId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "odometer": { "type": "number" },
+        "category": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "providerName": { "type": "string", "maxLength": 120 },
+        "partsCost": { "type": "number" },
+        "laborCost": { "type": "number" },
+        "totalCost": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "type", "status", "date", "odometer", "category", "partsCost", "laborCost", "totalCost", "createdAt", "updatedAt"]
+    },
+    "GarageExpense": {
+      "title": "GarageExpense",
+      "description": "Personal vehicle expense such as toll, parking, car wash, accessories, or taxes.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "category": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "amount": { "type": "number" },
+        "description": { "type": "string", "maxLength": 240 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "category", "date", "amount", "createdAt", "updatedAt"]
+    },
+    "GarageFine": {
+      "title": "GarageFine",
+      "description": "Personal traffic ticket record with points and SNE discount tracking.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "time": { "type": "string", "maxLength": 10 },
+        "infractionCode": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "location": { "type": "string", "maxLength": 160 },
+        "points": { "type": "integer" },
+        "amount": { "type": "number" },
+        "sneDiscountApplied": { "type": "boolean" },
+        "driverIndicationDeadline": { "type": "string", "maxLength": 10 },
+        "status": { "type": "string", "enum": ["PENDENTE", "INDICADO", "PAGA", "RECORRIDA"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "date", "infractionCode", "description", "points", "amount", "sneDiscountApplied", "status", "createdAt", "updatedAt"]
+    },
+    "GarageDocument": {
+      "title": "GarageDocument",
+      "description": "Personal vehicle IPVA, CRLV-e, insurance policy, or inspection obligation.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "docType": { "type": "string", "enum": ["CRLV", "IPVA", "SEGURO", "VISTORIA"] },
+        "referenceYear": { "type": "integer" },
+        "dueDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "amount": { "type": "number" },
+        "stateUf": { "type": "string", "maxLength": 4 },
+        "providerOrAuthority": { "type": "string", "maxLength": 120 },
+        "policyOrCode": { "type": "string", "maxLength": 120 },
+        "status": { "type": "string", "enum": ["PENDENTE", "PAGO", "ISENTO"] },
+        "paidAt": { "type": "string", "maxLength": 10 },
+        "autoGenerated": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "docType", "referenceYear", "dueDate", "amount", "status", "createdAt", "updatedAt"]
+    },
+    "GarageChecklist": {
+      "title": "GarageChecklist",
+      "description": "Personal pre-trip safety inspection checklist for a vehicle.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "odometer": { "type": "number" },
+        "items": { "type": "array" },
+        "hasIssues": { "type": "boolean" },
+        "generatedMaintenanceId": { "type": "string", "maxLength": 128 },
+        "generalNotes": { "type": "string", "maxLength": 400 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "date", "odometer", "items", "hasIssues", "createdAt", "updatedAt"]
+    },
+    "GarageRoute": {
+      "title": "GarageRoute",
+      "description": "Personal drive log with origin, destination, and odometer distance.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "driverId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "origin": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "destination": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "startOdometer": { "type": "number" },
+        "endOdometer": { "type": "number" },
+        "distanceKm": { "type": "number" },
+        "estimatedKm": { "type": "number" },
+        "purpose": { "type": "string", "maxLength": 160 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "date", "origin", "destination", "startOdometer", "endOdometer", "distanceKm", "createdAt", "updatedAt"]
+    },
+    "GarageReminder": {
+      "title": "GarageReminder",
+      "description": "Preventive maintenance or renewal reminder triggered by date or odometer.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "category": { "type": "string", "enum": ["MANUTENCAO", "DOCUMENTACAO", "SEGURO", "OUTRO"] },
+        "dueDate": { "type": "string", "maxLength": 10 },
+        "dueOdometer": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "completedAt": { "type": "string", "maxLength": 10 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "title", "category", "completed", "createdAt", "updatedAt"]
+    },
+    "FuelLog": {
+      "title": "FuelLog",
+      "description": "Fuel refill entry linked to a registered vehicle.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "vehicleId": { "type": "string", "maxLength": 128 },
+        "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "liters": { "type": "number" },
+        "totalCents": { "type": "integer" },
+        "odometerKm": { "type": "number" },
+        "fuelType": { "type": "string", "enum": ["Gasolina", "Etanol", "Diesel"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "vehicleId", "date", "liters", "totalCents", "odometerKm", "fuelType", "createdAt", "updatedAt"]
+    },
+    "TripPlan": {
+      "title": "TripPlan",
+      "description": "Trip itinerary with dates, budget, and status.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "destination": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "startDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "endDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "budgetCents": { "type": "integer" },
+        "spentCents": { "type": "integer" },
+        "notes": { "type": "string", "maxLength": 400 },
+        "status": { "type": "string", "enum": ["Planejada", "Em curso", "Concluída"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "destination", "startDate", "endDate", "budgetCents", "spentCents", "notes", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserWorkspaceProfile" },
+      "description": "Private user profile, brand logo preference, Pix recipient, and watchlist tickers."
+    },
+    "/users/{userId}/banks/{bankId}": {
+      "schema": { "$ref": "#/entities/BankAccount" },
+      "description": "User bank accounts."
+    },
+    "/users/{userId}/cards/{cardId}": {
+      "schema": { "$ref": "#/entities/CreditCardAccount" },
+      "description": "User credit cards."
+    },
+    "/users/{userId}/cardMonthSnapshots/{snapshotId}": {
+      "schema": { "$ref": "#/entities/CardMonthSnapshot" },
+      "description": "Point-in-time monthly snapshots captured for credit cards and bank accounts."
+    },
+    "/users/{userId}/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/WalletTransaction" },
+      "description": "User wallet ledger transactions."
+    },
+    "/users/{userId}/revenueSources/{sourceId}": {
+      "schema": { "$ref": "#/entities/RevenueSource" },
+      "description": "User revenue sources."
+    },
+    "/users/{userId}/revenueContracts/{contractId}": {
+      "schema": { "$ref": "#/entities/RevenueContract" },
+      "description": "User installment revenue contracts."
+    },
+    "/users/{userId}/revenueEntries/{entryId}": {
+      "schema": { "$ref": "#/entities/RevenueEntry" },
+      "description": "User receivables and receipts."
+    },
+    "/users/{userId}/revenueEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/RevenueEvent" },
+      "description": "Audit events for revenue receipts and corrections."
+    },
+    "/users/{userId}/annualYears/{yearId}": {
+      "schema": { "$ref": "#/entities/AnnualYearRecord" },
+      "description": "User registered fiscal exercise years."
+    },
+    "/users/{userId}/annualExpenses/{rowId}": {
+      "schema": { "$ref": "#/entities/AnnualExpenseRow" },
+      "description": "User annual expense matrix rows."
+    },
+    "/users/{userId}/monthlyBills/{billId}": {
+      "schema": { "$ref": "#/entities/MonthlyBill" },
+      "description": "User monthly expense bills."
+    },
+    "/users/{userId}/payableContracts/{contractId}": {
+      "schema": { "$ref": "#/entities/PayableContract" },
+      "description": "User payable installment debt contracts."
+    },
+    "/users/{userId}/payableInstallments/{installmentId}": {
+      "schema": { "$ref": "#/entities/PayableInstallment" },
+      "description": "Installment obligations belonging to payable contracts."
+    },
+    "/users/{userId}/personalAgenda/{agendaId}": {
+      "schema": { "$ref": "#/entities/PersonalAgendaRecord" },
+      "description": "User personal agenda events and checklists."
+    },
+    "/users/{userId}/agendaChecks/{checkId}": {
+      "schema": { "$ref": "#/entities/AgendaOccurrenceCheck" },
+      "description": "Per-occurrence checklist completions."
+    },
+    "/users/{userId}/shoppingList/{itemId}": {
+      "schema": { "$ref": "#/entities/ShoppingItem" },
+      "description": "User shopping list items."
+    },
+    "/users/{userId}/vehicles/{vehicleId}": {
+      "schema": { "$ref": "#/entities/VehicleRecord" },
+      "description": "User personal vehicles."
+    },
+    "/users/{userId}/garageDrivers/{driverId}": {
+      "schema": { "$ref": "#/entities/GarageDriver" },
+      "description": "Personal and family driver CNH profiles."
+    },
+    "/users/{userId}/garageFuelings/{fuelingId}": {
+      "schema": { "$ref": "#/entities/GarageFueling" },
+      "description": "Detailed personal vehicle fueling entries."
+    },
+    "/users/{userId}/garageMaintenances/{maintId}": {
+      "schema": { "$ref": "#/entities/GarageMaintenance" },
+      "description": "Personal preventive and corrective maintenance logs."
+    },
+    "/users/{userId}/garageExpenses/{expId}": {
+      "schema": { "$ref": "#/entities/GarageExpense" },
+      "description": "Personal vehicle expenses (tolls, parking, insurance, taxes)."
+    },
+    "/users/{userId}/garageFines/{fineId}": {
+      "schema": { "$ref": "#/entities/GarageFine" },
+      "description": "Personal traffic fines and CTB point tracking."
+    },
+    "/users/{userId}/garageDocuments/{docId}": {
+      "schema": { "$ref": "#/entities/GarageDocument" },
+      "description": "IPVA, CRLV-e, insurance policy, and inspection due dates."
+    },
+    "/users/{userId}/garageChecklists/{checklistId}": {
+      "schema": { "$ref": "#/entities/GarageChecklist" },
+      "description": "Personal pre-trip safety inspection checklists."
+    },
+    "/users/{userId}/garageRoutes/{routeId}": {
+      "schema": { "$ref": "#/entities/GarageRoute" },
+      "description": "Personal drive logs and odometer intervals."
+    },
+    "/users/{userId}/garageReminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/GarageReminder" },
+      "description": "Preventive maintenance and document reminders."
+    },
+    "/users/{userId}/fuelLogs/{logId}": {
+      "schema": { "$ref": "#/entities/FuelLog" },
+      "description": "User vehicle fuel logs."
+    },
+    "/users/{userId}/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/TripPlan" },
+      "description": "User trip plans."
+    }
+  }
+}
