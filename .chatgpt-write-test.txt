@@ -1,0 +1,2 @@
+Teste temporário de permissão de escrita da integração ChatGPT em 2026-11-19.
+Sem alteração na branch main.
