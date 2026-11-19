@@ -4,6 +4,7 @@ import {
   CalendarDays,
   CarFront,
   ClipboardList,
+  ReceiptText,
   LayoutDashboard,
   LineChart,
   LogOut,
@@ -23,12 +24,13 @@ const FINANCE_NAV = [
   { to: "/despesas", label: "Despesas", icon: TrendingDown },
   { to: "/carteira", label: "Carteira", icon: Wallet },
   { to: "/cotacoes", label: "Bolsa & Moedas", icon: LineChart },
+  { to: "/notas-fiscais", label: "Notas Fiscais", icon: ReceiptText },
 ];
 
 const PERSONAL_NAV = [
   { to: "/agenda", label: "Agenda (Brasília)", icon: CalendarDays },
   { to: "/compras", label: "Lista de Compras", icon: ClipboardList },
-  { to: "/veiculos", label: "Garagem & Viagens", icon: CarFront },
+  { to: "/veiculos", label: "Veículo", icon: CarFront },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
