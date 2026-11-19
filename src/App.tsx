@@ -13,6 +13,7 @@ import { AgendaPage } from "@/pages/AgendaPage";
 import { ComprasPage } from "@/pages/ComprasPage";
 import { VeiculosPage } from "@/pages/VeiculosPage";
 import { PerfilPage } from "@/pages/PerfilPage";
+import { NotasFiscaisPage } from "@/pages/NotasFiscaisPage";
 
 function AppRoutes() {
   const { authReady, user } = useOrion();
@@ -45,6 +46,7 @@ function AppRoutes() {
       <Route path="/receitas" element={<ReceitasPage />} />
       <Route path="/despesas" element={<DespesasPage />} />
       <Route path="/carteira" element={<CarteiraPage />} />
+      <Route path="/notas-fiscais" element={<NotasFiscaisPage />} />
       <Route path="/cotacoes" element={<BolsaPage />} />
       <Route path="/agenda" element={<AgendaPage />} />
       <Route path="/compras" element={<ComprasPage />} />

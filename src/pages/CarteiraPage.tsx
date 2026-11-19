@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
+import { PluggySettings } from "@/components/PluggySettings";
 import { useOrion } from "@/store/orionContext";
 import { formatBRL, formatDateBR, parseBRL } from "@/lib/domain/money";
 import type { CardBrand, CreditCardAccount } from "@/types/orion";
@@ -148,6 +149,7 @@ export function CarteiraPage() {
       subtitle="Contas bancárias, cartões de crédito e movimentações consolidadas"
       actions={
         <div className="flex items-center gap-2">
+          <PluggySettings />
           <button
             type="button"
             onClick={() => setBankOpen(true)}
