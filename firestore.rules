@@ -713,6 +713,22 @@ service cloud.firestore {
         );
       allow delete: if isValidId(userId) && isOwner(userId);
 
+      match /fiscalReceipts/{noteId} {
+        allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && parentWorkspaceOwned(userId) && resource.data.ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && incoming().ownerId == userId && hasValidTimestampsOnCreate(incoming())
+          && incoming().store is string && incoming().store.size() <= 160
+          && incoming().items is list && incoming().items.size() <= 150
+          && incoming().totalCents is int && incoming().totalCents >= 0;
+        allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && incoming().ownerId == existing().ownerId && hasImmutableCoreOnUpdate()
+          && incoming().store is string && incoming().store.size() <= 160
+          && incoming().items is list && incoming().items.size() <= 150
+          && incoming().totalCents is int && incoming().totalCents >= 0;
+        allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
       match /banks/{bankId} {
         allow get: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
         allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
