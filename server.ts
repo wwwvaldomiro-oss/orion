@@ -1,10 +1,12 @@
+import financeIntegrationRouter from "./serverIntegrations.ts";
 import fs from "node:fs";
 import path from "node:path";
 import express from "express";
 import { B3_STOCKS, stockName } from "./src/lib/domain/b3.ts";
 
 const app = express();
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json({ limit: "12mb" }));
+app.use("/api", financeIntegrationRouter);
 
 const PORT = Number(process.env["PORT"] || 3000);
 const IS_PROD = process.env["NODE_ENV"] === "production";
