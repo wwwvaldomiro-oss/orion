@@ -1,0 +1,67 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "órion",
+      "intents": [
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "ShoppingListIntent",
+          "samples": [
+            "o que tem na minha lista de compras",
+            "minha lista de compras",
+            "quais produtos preciso comprar"
+          ]
+        },
+        {
+          "name": "AddShoppingItemIntent",
+          "slots": [
+            {
+              "name": "item",
+              "type": "AMAZON.SearchQuery"
+            }
+          ],
+          "samples": [
+            "adicione {item} na lista de compras",
+            "coloque {item} na minha lista",
+            "adicionar {item} à lista de compras"
+          ]
+        },
+        {
+          "name": "TodayAgendaIntent",
+          "samples": [
+            "minha agenda de hoje",
+            "quais meus compromissos hoje",
+            "o que tenho para hoje"
+          ]
+        },
+        {
+          "name": "UpcomingBillsIntent",
+          "samples": [
+            "quais contas vão vencer",
+            "minhas próximas contas",
+            "contas para pagar"
+          ]
+        }
+      ]
+    }
+  }
+}
