@@ -14,6 +14,7 @@ import { ComprasPage } from "@/pages/ComprasPage";
 import { VeiculosPage } from "@/pages/VeiculosPage";
 import { PerfilPage } from "@/pages/PerfilPage";
 import { NotasFiscaisPage } from "@/pages/NotasFiscaisPage";
+import { AlexaAuthorizePage } from "@/pages/AlexaAuthorizePage";
 
 function AppRoutes() {
   const { authReady, user } = useOrion();
@@ -52,6 +53,7 @@ function AppRoutes() {
       <Route path="/compras" element={<ComprasPage />} />
       <Route path="/veiculos" element={<VeiculosPage />} />
       <Route path="/perfil" element={<PerfilPage />} />
+      <Route path="/alexa/autorizar" element={<AlexaAuthorizePage />} />
       <Route path="*" element={<Navigate to="/painel" replace />} />
     </Routes>
   );
