@@ -5,6 +5,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { BRAND_LOGOS } from "@/components/brandLogoSpecs";
 import { BrandMark } from "@/components/BrandLogos";
 import { OrionImportPanel } from "@/components/OrionImportPanel";
+import { AlexaIntegrationPanel } from "@/components/AlexaIntegrationPanel";
 import { useOrion } from "@/store/orionContext";
 import { BRAZIL_STATES } from "@/lib/domain/contracts";
 import { downloadBlob } from "@/lib/domain/invoice";
@@ -117,7 +118,8 @@ export function PerfilPage() {
       }
     >
       <div className="space-y-6">
-        {/* Google Account Identity Banner */}
+        <AlexaIntegrationPanel />
+        {/* Google Account Identity Banner */
         <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#dce2e6] bg-white p-5">
           <div className="flex items-center gap-4">
             {state.profile.photoUrl ? (
