@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
 import { Plus, Save, Target, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
@@ -78,7 +78,9 @@ export function OrcamentoPage() {
       const ref = doc(db, "users", user.uid, "budgetYears", String(year));
       const payload = { categories: data.categories, rows: data.rows, goals: data.goals, updatedAt: serverTimestamp() };
       // Only new budget data is written. Existing annual expenses and payments are read-only here.
-      await setDoc(ref, { ownerId: user.uid, year, createdAt: serverTimestamp(), ...payload }, { merge: true });
+      const existing = await getDoc(ref);
+      if (existing.exists()) await updateDoc(ref, payload);
+      else await setDoc(ref, { ownerId: user.uid, year, createdAt: serverTimestamp(), ...payload });
       setDirty(false);
       toast.success("Previsão anual e metas salvas.");
     } catch (e) {
