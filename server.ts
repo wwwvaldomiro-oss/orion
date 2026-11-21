@@ -8,6 +8,24 @@ const app = express();
 app.use(express.json({ limit: "12mb" }));
 app.use("/api", financeIntegrationRouter);
 
+app.use(
+  "/api",
+  (
+    err: unknown,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    const status =
+      typeof (err as { status?: unknown })?.status === "number"
+        ? Number((err as { status?: number }).status)
+        : 400;
+    const message =
+      err instanceof Error ? err.message : "Requisição JSON inválida na API.";
+    res.status(status >= 400 && status < 600 ? status : 500).json({ error: message });
+  },
+);
+
 const PORT = Number(process.env["PORT"] || 3000);
 const IS_PROD = process.env["NODE_ENV"] === "production";
 const DEFAULT_HEADERS = {
@@ -177,7 +195,7 @@ app.get("/api/quotes/stocks", async (_req, res) => {
     );
 
     if (stocks.length === 0) {
-      res.status(503).json({
+      res.status(424).json({
         error: "Não foi possível obter cotações reais da B3 no momento. Tente novamente em instantes.",
       });
       return;
@@ -191,7 +209,7 @@ app.get("/api/quotes/stocks", async (_req, res) => {
     setCached("stocks", payload, 20_000);
     res.json(payload);
   } catch (err) {
-    res.status(503).json({
+    res.status(424).json({
       error: err instanceof Error ? err.message : "Falha ao consultar cotações reais da B3.",
     });
   }
@@ -325,7 +343,7 @@ app.get("/api/quotes/stock/:symbol", async (req, res) => {
     setCached(cacheKey, payload, 30_000);
     res.json(payload);
   } catch (err) {
-    res.status(503).json({
+    res.status(424).json({
       error: err instanceof Error ? err.message : `Não foi possível obter a série intradia de ${symbol}.`,
     });
   }
@@ -460,7 +478,7 @@ app.get("/api/quotes/currencies", async (_req, res) => {
     }
 
     if (currencies.length === 0) {
-      res.status(503).json({
+      res.status(424).json({
         error: "Cotações de moedas em tempo real indisponíveis no momento.",
       });
       return;
@@ -474,7 +492,7 @@ app.get("/api/quotes/currencies", async (_req, res) => {
     setCached("currencies", payload, 20_000);
     res.json(payload);
   } catch (err) {
-    res.status(503).json({
+    res.status(424).json({
       error: err instanceof Error ? err.message : "Falha ao obter cotações reais de moedas.",
     });
   }
@@ -567,13 +585,13 @@ app.get("/api/sgs/:index", async (req, res) => {
       }
     }
   } catch (err) {
-    res.status(503).json({
+    res.status(424).json({
       error: err instanceof Error ? err.message : `Não foi possível consultar o índice oficial ${index}.`,
     });
     return;
   }
 
-  res.status(503).json({
+  res.status(424).json({
     error: `Não foi possível consultar observações oficiais para ${index} no momento.`,
   });
 });
@@ -652,13 +670,311 @@ app.post("/api/garagem/fipe-consulta", async (req, res) => {
         "Consulta real de referência FIPE via BrasilAPI. Débitos estaduais (IPVA/CRLV/Multas) dependem de consulta direta no portal Detran/Sefaz da UF.",
     });
   } catch (err) {
-    res.status(503).json({
+    res.status(424).json({
       error: err instanceof Error ? err.message : "Falha ao consultar tabela FIPE.",
     });
   }
 });
 
+function wmoWeatherDescription(code: number): { label: string; condition: "clear" | "partly" | "cloudy" | "fog" | "rain" | "storm" | "snow" } {
+  if (code === 0) return { label: "Céu limpo", condition: "clear" };
+  if (code === 1) return { label: "Predomínio de sol", condition: "clear" };
+  if (code === 2) return { label: "Parcialmente nublado", condition: "partly" };
+  if (code === 3) return { label: "Nublado", condition: "cloudy" };
+  if (code === 45 || code === 48) return { label: "Neblina", condition: "fog" };
+  if (code >= 51 && code <= 57) return { label: "Garoa", condition: "rain" };
+  if ((code >= 61 && code <= 67) || (code >= 80 && code <= 82)) return { label: "Chuva", condition: "rain" };
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return { label: "Neve / granizo", condition: "snow" };
+  if (code >= 95) return { label: "Tempestade", condition: "storm" };
+  return { label: "Tempo variável", condition: "partly" };
+}
+
+app.get("/api/weather/search", async (req, res) => {
+  const q = String(req.query["q"] || "").trim().slice(0, 100);
+  if (q.length < 2) {
+    res.status(400).json({ error: "Informe pelo menos 2 caracteres para buscar a localidade." });
+    return;
+  }
+
+  const cacheKey = `weather:search:${q.toLowerCase()}`;
+  const cached = getCached<{
+    results: Array<{
+      name: string;
+      admin1: string;
+      country: string;
+      countryCode: string;
+      latitude: number;
+      longitude: number;
+      label: string;
+    }>;
+    provider: string;
+  }>(cacheKey);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
+  try {
+    const geo = await fetchJsonWithTimeout<{
+      results?: Array<{
+        name?: string;
+        admin1?: string;
+        country?: string;
+        country_code?: string;
+        latitude?: number;
+        longitude?: number;
+      }>;
+    }>(
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=pt&format=json`,
+      {},
+      5500,
+    );
+
+    const results = (geo.results ?? [])
+      .filter((r) => typeof r.latitude === "number" && typeof r.longitude === "number" && r.name)
+      .map((r) => {
+        const name = String(r.name);
+        const admin1 = String(r.admin1 || "");
+        const country = String(r.country || "");
+        const countryCode = String(r.country_code || "");
+        const label = [name, admin1, countryCode || country].filter(Boolean).join(", ");
+        return {
+          name,
+          admin1,
+          country,
+          countryCode,
+          latitude: Number(r.latitude!.toFixed(4)),
+          longitude: Number(r.longitude!.toFixed(4)),
+          label,
+        };
+      });
+
+    const payload = {
+      results,
+      provider: "Open-Meteo Geocoding (API pública gratuita)",
+    };
+    setCached(cacheKey, payload, 1_800_000);
+    res.json(payload);
+  } catch (err) {
+    res.status(424).json({
+      error: err instanceof Error ? err.message : "Falha ao pesquisar localidade no serviço meteorológico.",
+    });
+  }
+});
+
+app.get("/api/weather", async (req, res) => {
+  const lat = Number(req.query["lat"]);
+  const lon = Number(req.query["lon"]);
+  const label = String(req.query["label"] || "").trim().slice(0, 140);
+
+  if (!Number.isFinite(lat) || lat < -90 || lat > 90 || !Number.isFinite(lon) || lon < -180 || lon > 180) {
+    res.status(400).json({ error: "Coordenadas geográficas inválidas (lat/lon)." });
+    return;
+  }
+
+  const latKey = lat.toFixed(2);
+  const lonKey = lon.toFixed(2);
+  const cacheKey = `weather:forecast:${latKey}:${lonKey}`;
+  const cached = getCached<Record<string, unknown>>(cacheKey);
+  if (cached) {
+    res.json({ ...cached, ...(label ? { locationLabel: label } : {}) });
+    return;
+  }
+
+  const googleWeatherKey =
+    process.env["GOOGLE_WEATHER_API_KEY"] ||
+    process.env["GOOGLE_MAPS_WEATHER_API_KEY"] ||
+    "";
+
+  if (googleWeatherKey) {
+    try {
+      const gCurrent = await fetchJsonWithTimeout<Record<string, unknown>>(
+        `https://weather.googleapis.com/v1/currentConditions:lookup?key=${encodeURIComponent(googleWeatherKey)}&location.latitude=${lat}&location.longitude=${lon}&languageCode=pt-BR`,
+        {},
+        5500,
+      );
+      if (gCurrent && typeof gCurrent === "object" && "temperature" in gCurrent) {
+        const tempObj = gCurrent["temperature"] as { degrees?: number } | undefined;
+        const feelsObj = gCurrent["feelsLikeTemperature"] as { degrees?: number } | undefined;
+        const windObj = gCurrent["wind"] as { speed?: { value?: number } } | undefined;
+        const humidity = Number(gCurrent["relativeHumidity"] ?? 0);
+        const condObj = gCurrent["weatherCondition"] as { description?: { text?: string } } | undefined;
+        if (typeof tempObj?.degrees === "number") {
+          const googlePayload = {
+            locationLabel: label || `${latKey}, ${lonKey}`,
+            latitude: lat,
+            longitude: lon,
+            provider: "Google Maps Platform · Weather API (oficial)",
+            googleWeatherAvailable: true,
+            googleNotice: "Integrado à Weather API oficial do Google Maps Platform configurada no servidor.",
+            fetchedAt: new Date().toISOString(),
+            current: {
+              temperatureC: Number(tempObj.degrees.toFixed(1)),
+              apparentTemperatureC: Number((feelsObj?.degrees ?? tempObj.degrees).toFixed(1)),
+              humidityPercent: Number.isFinite(humidity) ? Math.round(humidity) : 0,
+              windKmh: Number((windObj?.speed?.value ?? 0).toFixed(1)),
+              precipitationMm: 0,
+              description: condObj?.description?.text || "Condição atual",
+              condition: "partly",
+              isDay: Boolean(gCurrent["isDaytime"] ?? true),
+            },
+            hourly: [],
+            daily: [],
+          };
+          setCached(cacheKey, googlePayload, 600_000);
+          res.json(googlePayload);
+          return;
+        }
+      }
+    } catch {
+      // Fall back to Open-Meteo if Google Weather API is not authorized/enabled for this key
+    }
+  }
+
+  try {
+    const forecast = await fetchJsonWithTimeout<{
+      current?: {
+        temperature_2m?: number;
+        relative_humidity_2m?: number;
+        apparent_temperature?: number;
+        precipitation?: number;
+        weather_code?: number;
+        wind_speed_10m?: number;
+        is_day?: number;
+      };
+      hourly?: {
+        time?: string[];
+        temperature_2m?: number[];
+        precipitation_probability?: number[];
+        weather_code?: number[];
+      };
+      daily?: {
+        time?: string[];
+        weather_code?: number[];
+        temperature_2m_max?: number[];
+        temperature_2m_min?: number[];
+        precipitation_sum?: number[];
+        precipitation_probability_max?: number[];
+      };
+    }>(
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,is_day&hourly=temperature_2m,precipitation_probability,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max&timezone=America%2FSao_Paulo&forecast_days=7`,
+      {},
+      6000,
+    );
+
+    if (!forecast.current || typeof forecast.current.temperature_2m !== "number") {
+      throw new Error("Resposta meteorológica incompleta.");
+    }
+
+    const curCode = Number(forecast.current.weather_code ?? 2);
+    const curDesc = wmoWeatherDescription(curCode);
+
+    const nowHourIso = new Intl.DateTimeFormat("sv-SE", {
+      timeZone: "America/Sao_Paulo",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+    })
+      .format(new Date())
+      .replace(" ", "T");
+
+    const hTimes = forecast.hourly?.time ?? [];
+    const hTemps = forecast.hourly?.temperature_2m ?? [];
+    const hPops = forecast.hourly?.precipitation_probability ?? [];
+    const hCodes = forecast.hourly?.weather_code ?? [];
+
+    const hourly: Array<{
+      time: string;
+      hourLabel: string;
+      temperatureC: number;
+      precipitationProb: number;
+      description: string;
+      condition: string;
+    }> = [];
+
+    for (let i = 0; i < hTimes.length; i++) {
+      const t = hTimes[i];
+      if (!t || t.slice(0, 13) < nowHourIso.slice(0, 13)) continue;
+      const temp = hTemps[i];
+      if (typeof temp !== "number") continue;
+      const wmo = wmoWeatherDescription(Number(hCodes[i] ?? 2));
+      hourly.push({
+        time: t,
+        hourLabel: t.slice(11, 16),
+        temperatureC: Number(temp.toFixed(1)),
+        precipitationProb: Math.round(Number(hPops[i] ?? 0)),
+        description: wmo.label,
+        condition: wmo.condition,
+      });
+      if (hourly.length >= 12) break;
+    }
+
+    const dTimes = forecast.daily?.time ?? [];
+    const dCodes = forecast.daily?.weather_code ?? [];
+    const dMax = forecast.daily?.temperature_2m_max ?? [];
+    const dMin = forecast.daily?.temperature_2m_min ?? [];
+    const dPrecip = forecast.daily?.precipitation_sum ?? [];
+    const dPopMax = forecast.daily?.precipitation_probability_max ?? [];
+
+    const daily = dTimes.map((date, idx) => {
+      const wmo = wmoWeatherDescription(Number(dCodes[idx] ?? 2));
+      return {
+        date,
+        minC: Number((dMin[idx] ?? 0).toFixed(1)),
+        maxC: Number((dMax[idx] ?? 0).toFixed(1)),
+        precipitationMm: Number((dPrecip[idx] ?? 0).toFixed(1)),
+        precipitationProb: Math.round(Number(dPopMax[idx] ?? 0)),
+        description: wmo.label,
+        condition: wmo.condition,
+      };
+    });
+
+    const payload = {
+      locationLabel: label || `${latKey}, ${lonKey}`,
+      latitude: lat,
+      longitude: lon,
+      provider: "Open-Meteo (API pública gratuita · sem chave paga)",
+      googleWeatherAvailable: false,
+      googleNotice:
+        "Google Maps Weather API requer projeto Cloud com faturamento autorizado e chave dedicada. Exibindo dados meteorológicos reais via Open-Meteo sem custos.",
+      fetchedAt: new Date().toISOString(),
+      current: {
+        temperatureC: Number(forecast.current.temperature_2m.toFixed(1)),
+        apparentTemperatureC: Number(
+          (forecast.current.apparent_temperature ?? forecast.current.temperature_2m).toFixed(1),
+        ),
+        humidityPercent: Math.round(Number(forecast.current.relative_humidity_2m ?? 0)),
+        windKmh: Number((forecast.current.wind_speed_10m ?? 0).toFixed(1)),
+        precipitationMm: Number((forecast.current.precipitation ?? 0).toFixed(1)),
+        minTodayC: daily[0]?.minC ?? null,
+        maxTodayC: daily[0]?.maxC ?? null,
+        description: curDesc.label,
+        condition: curDesc.condition,
+        isDay: Number(forecast.current.is_day ?? 1) === 1,
+      },
+      hourly,
+      daily,
+    };
+
+    setCached(cacheKey, payload, 600_000);
+    res.json(payload);
+  } catch (err) {
+    res.status(424).json({
+      error: err instanceof Error ? err.message : "Previsão do tempo indisponível no momento.",
+      googleWeatherAvailable: false,
+    });
+  }
+});
+
 async function startServer() {
+  // Never allow unmatched /api/* calls to fall through into Vite or SPA index.html
+  app.use("/api", (req, res) => {
+    res.status(404).json({
+      error: `Rota de API não encontrada (${req.method} /api${req.path}).`,
+    });
+  });
+
   if (!IS_PROD) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
@@ -669,7 +985,11 @@ async function startServer() {
   } else {
     const distDir = path.resolve(import.meta.dirname, "dist");
     app.use(express.static(distDir));
-    app.get("/{*path}", (_req, res) => {
+    app.get("/{*path}", (req, res) => {
+      if (req.path === "/api" || req.path.startsWith("/api/")) {
+        res.status(404).json({ error: "Rota de API não encontrada." });
+        return;
+      }
       const indexHtml = path.join(distDir, "index.html");
       if (fs.existsSync(indexHtml)) {
         res.sendFile(indexHtml);

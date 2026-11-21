@@ -12,18 +12,22 @@ import { BolsaPage } from "@/pages/BolsaPage";
 import { AgendaPage } from "@/pages/AgendaPage";
 import { ComprasPage } from "@/pages/ComprasPage";
 import { VeiculosPage } from "@/pages/VeiculosPage";
+import { ViagensPage } from "@/pages/ViagensPage";
 import { PerfilPage } from "@/pages/PerfilPage";
 import { NotasFiscaisPage } from "@/pages/NotasFiscaisPage";
+import { AgendaAlarmManager } from "@/components/agenda/AgendaAlarmManager";
 
 function AppRoutes() {
   const { authReady, user } = useOrion();
 
   if (!authReady) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f7f8fa] text-[#0c1928]">
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f8fa] text-[#0c1928] dark:bg-[#08121d] dark:text-slate-100">
         <div className="text-center">
           <div className="mx-auto size-8 animate-spin rounded-full border-2 border-[#173d4a] border-t-transparent" />
-          <p className="mt-3 text-xs font-medium text-[#52616a]">Verificando sessão segura...</p>
+          <p className="mt-3 text-xs font-medium text-[#52616a] dark:text-slate-400">
+            Verificando sessão segura...
+          </p>
         </div>
       </div>
     );
@@ -51,6 +55,7 @@ function AppRoutes() {
       <Route path="/agenda" element={<AgendaPage />} />
       <Route path="/compras" element={<ComprasPage />} />
       <Route path="/veiculos" element={<VeiculosPage />} />
+      <Route path="/viagens" element={<ViagensPage />} />
       <Route path="/perfil" element={<PerfilPage />} />
       <Route path="*" element={<Navigate to="/painel" replace />} />
     </Routes>
@@ -63,6 +68,7 @@ export function App() {
       <OrionProvider>
         <BrowserRouter>
           <AppRoutes />
+          <AgendaAlarmManager />
         </BrowserRouter>
         <Toaster richColors position="top-right" />
       </OrionProvider>

@@ -46,3 +46,13 @@ use the editor.
 - Annual receipt actions target the existing entry ID; source edits use an owner-scoped atomic RPC to rebuild only unpaid projections and preserve confirmed receipt history.
 - Saved invoice recipients are user-owned Cloud records; IBGE supplies municipality choices with a bundled Brazilian municipality catalogue fallback for outages, and only Pix payload fields are normalized to protocol lengths so PDFs and saved names remain complete.
 - Axion provider keys are stored in server-only tables (no client grants) instead of the database vault, which Lovable Cloud migrations cannot use.
+
+## Diretrizes Permanentes do Projeto Órion
+
+Referência completa em `docs/DIRETRIZES-PERMANENTES.md`:
+
+- **Idealizador e autoria conceitual:** Valdemiro Nascimento é o idealizador e responsável pelo projeto Órion (nascido em iniciativa pessoal com auxílio da Lovable, versionado no GitHub e reestruturado no Google AI Studio; reconhecimento documental sem constituir declaração jurídica sobre componentes de terceiros).
+- **Autonomia e papéis:** O idealizador define objetivos, prioridades e avalia resultados; a engenharia decide e implementa arquitetura, correções, testes e validações de forma autônoma, acionando o idealizador apenas para decisões de produto, autorizações externas, credenciais indispensáveis ou custos.
+- **Política de API Keys:** A única credencial externa confirmada atualmente é a da Pluggy (uso restrito ao que ela autoriza). Priorizar recursos nativos, bibliotecas gratuitas/open-source, APIs públicas e processamento local; nunca inventar credenciais nem apresentar simulações como integrações reais.
+- **Continuidade e resultados:** A versão atual no Google AI Studio é a referência principal (não reconstruir a partir de histórico antigo do GitHub; preservar identidade visual, módulos, dados e regras de negócio). Nunca declarar conclusão sem validação real e sempre detalhar limitações ou dependências externas quando existentes.
+- **Custos:** Priorizar soluções gratuitas/baixo custo e não ativar serviços pagos ou faturamento sem autorização expressa do idealizador.

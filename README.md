@@ -10,3 +10,8 @@ npm run dev
 ```
 
 O servidor inicia em `http://0.0.0.0:3000`.
+
+## Documentação Interna
+
+- **Diretrizes permanentes de desenvolvimento, autoria conceitual e política de integrações:** [`docs/DIRETRIZES-PERMANENTES.md`](./docs/DIRETRIZES-PERMANENTES.md) (idealizado e conduzido por Valdemiro Nascimento).
+- **Notas Fiscais e Pluggy:** [`INTEGRACAO-NOTAS-PLUGGY.md`](./INTEGRACAO-NOTAS-PLUGGY.md).

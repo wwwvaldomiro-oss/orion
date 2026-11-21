@@ -74,6 +74,7 @@
         "amountCents": { "type": "integer" },
         "date": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
         "category": { "type": "string", "maxLength": 60 },
+        "reconciledEventId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -146,7 +147,11 @@
         "receivedCents": { "type": "integer" },
         "agreedCents": { "type": "integer" },
         "adjustmentCents": { "type": "integer" },
+        "discountCents": { "type": "integer" },
+        "surchargeCents": { "type": "integer" },
         "accountId": { "type": "string", "maxLength": 128 },
+        "bankTransactionId": { "type": "string", "maxLength": 128 },
+        "attachments": { "type": "array" },
         "note": { "type": "string", "maxLength": 300 },
         "sourceRecordId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
@@ -164,8 +169,13 @@
         "kind": { "type": "string", "minLength": 1, "maxLength": 40 },
         "reason": { "type": "string", "maxLength": 300 },
         "eventCreatedAt": { "type": "string", "maxLength": 40 },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "bankTransactionId": { "type": "string", "maxLength": 128 },
+        "targetEventId": { "type": "string", "maxLength": 128 },
+        "idempotencyKey": { "type": "string", "maxLength": 128 },
         "beforeData": { "type": "object" },
         "afterData": { "type": "object" },
+        "attachments": { "type": "array" },
         "sourceRecordId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -174,13 +184,17 @@
     },
     "AnnualYearRecord": {
       "title": "AnnualYearRecord",
-      "description": "Registered fiscal exercise year.",
+      "description": "Registered fiscal exercise year with persisted category expense history.",
       "type": "object",
       "properties": {
         "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "year": { "type": "integer" },
         "sourceName": { "type": "string", "maxLength": 140 },
         "archivedAt": { "type": "string", "maxLength": 40 },
+        "totalExpenseCents": { "type": "integer", "minimum": 0 },
+        "categoryTotalsCents": { "type": "object" },
+        "monthlyCategoryCents": { "type": "object" },
+        "snapshotUpdatedAt": { "type": "string", "maxLength": 40 },
         "sourceRecordId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -231,12 +245,56 @@
         "installmentNumber": { "type": "integer" },
         "expenseKind": { "type": "string", "enum": ["consumption", "debt"] },
         "accountId": { "type": "string", "maxLength": 128 },
+        "bankTransactionId": { "type": "string", "maxLength": 128 },
+        "discountCents": { "type": "integer" },
+        "surchargeCents": { "type": "integer" },
+        "attachments": { "type": "array" },
+        "isCardInvoice": { "type": "boolean" },
+        "cardId": { "type": "string", "maxLength": 128 },
         "note": { "type": "string", "maxLength": 300 },
         "sourceRecordId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "period", "creditor", "category", "dueDate", "expectedCents", "paidDate", "paidCents", "isSettled", "createdAt", "updatedAt"]
+    },
+    "PaymentEvent": {
+      "title": "PaymentEvent",
+      "description": "Append-only payment, partial settlement, early payoff, correction, and reversal audit event.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "billId": { "type": "string", "maxLength": 128 },
+        "installmentId": { "type": "string", "maxLength": 128 },
+        "contractId": { "type": "string", "maxLength": 128 },
+        "annualRowId": { "type": "string", "maxLength": 128 },
+        "period": { "type": "string", "maxLength": 7 },
+        "cardId": { "type": "string", "maxLength": 128 },
+        "creditor": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "category": { "type": "string", "maxLength": 60 },
+        "dueDate": { "type": "string", "maxLength": 10 },
+        "expectedCents": { "type": "integer" },
+        "paidCents": { "type": "integer" },
+        "paidDate": { "type": "string", "maxLength": 10 },
+        "discountCents": { "type": "integer" },
+        "surchargeCents": { "type": "integer" },
+        "isSettled": { "type": "boolean" },
+        "accountId": { "type": "string", "maxLength": 128 },
+        "bankTransactionId": { "type": "string", "maxLength": 128 },
+        "targetEventId": { "type": "string", "maxLength": 128 },
+        "idempotencyKey": { "type": "string", "maxLength": 128 },
+        "kind": { "type": "string", "enum": ["pagamento", "parcial", "quitacao_antecipada", "correcao", "estorno"] },
+        "reason": { "type": "string", "maxLength": 300 },
+        "eventCreatedAt": { "type": "string", "maxLength": 40 },
+        "beforeData": { "type": "object" },
+        "afterData": { "type": "object" },
+        "attachments": { "type": "array" },
+        "note": { "type": "string", "maxLength": 300 },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "creditor", "dueDate", "expectedCents", "paidCents", "paidDate", "isSettled", "kind", "reason", "eventCreatedAt", "createdAt", "updatedAt"]
     },
     "PayableContract": {
       "title": "PayableContract",
@@ -271,6 +329,10 @@
         "paidDate": { "type": "string", "maxLength": 10 },
         "note": { "type": "string", "maxLength": 300 },
         "accountId": { "type": "string", "maxLength": 128 },
+        "bankTransactionId": { "type": "string", "maxLength": 128 },
+        "discountCents": { "type": "integer" },
+        "surchargeCents": { "type": "integer" },
+        "attachments": { "type": "array" },
         "sourceRecordId": { "type": "string", "maxLength": 128 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -313,10 +375,19 @@
         "startDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
         "time": { "type": "string", "maxLength": 10 },
         "endTime": { "type": "string", "maxLength": 10 },
+        "breakRule": { "type": "string", "maxLength": 120 },
+        "company": { "type": "string", "maxLength": 140 },
         "description": { "type": "string", "maxLength": 500 },
-        "recurrence": { "type": "string", "enum": ["none", "daily", "12x36", "weekly", "monthly", "yearly"] },
+        "recurrence": { "type": "string", "enum": ["none", "daily", "12x36", "weekly", "monthly", "yearly", "custom"] },
+        "customDates": { "type": "array" },
         "favorite": { "type": "boolean" },
         "reminder": { "type": "boolean" },
+        "reminderMinutesBefore": { "type": "integer", "minimum": 0, "maximum": 43200 },
+        "completed": { "type": "boolean" },
+        "completedAt": { "type": "string", "maxLength": 40 },
+        "linkedNoteId": { "type": "string", "maxLength": 128 },
+        "linkedContactId": { "type": "string", "maxLength": 128 },
+        "color": { "type": "string", "maxLength": 20 },
         "items": { "type": "array" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -599,6 +670,274 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["ownerId", "destination", "startDate", "endDate", "budgetCents", "spentCents", "notes", "status", "createdAt", "updatedAt"]
+    },
+    "FiscalReceipt": {
+      "title": "FiscalReceipt",
+      "description": "Personal NFC-e / NF-e / DANFE / NFS-e fiscal receipt with extracted items, folder metadata, warranty, and private storage attachment.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "kind": { "type": "string", "enum": ["geral", "mercado", "aquisicoes"] },
+        "docType": { "type": "string", "enum": ["nfce_65", "nfe_55", "nfse", "recibo"] },
+        "uf": { "type": "string", "maxLength": 4 },
+        "store": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "cnpj": { "type": "string", "maxLength": 30 },
+        "emitterAddress": { "type": "string", "maxLength": 220 },
+        "issuedAt": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "issuedTime": { "type": "string", "maxLength": 10 },
+        "accessKey": { "type": "string", "maxLength": 60 },
+        "number": { "type": "string", "maxLength": 30 },
+        "series": { "type": "string", "maxLength": 20 },
+        "paymentMethod": { "type": "string", "maxLength": 80 },
+        "discountCents": { "type": "integer" },
+        "totalCents": { "type": "integer" },
+        "items": { "type": "array" },
+        "archiveCategory": { "type": "string", "maxLength": 60 },
+        "folderPath": { "type": "string", "maxLength": 120 },
+        "storagePath": { "type": "string", "maxLength": 400 },
+        "fileName": { "type": "string", "maxLength": 160 },
+        "fileMimeType": { "type": "string", "maxLength": 80 },
+        "fileHash": { "type": "string", "maxLength": 80 },
+        "documentUrl": { "type": "string", "maxLength": 1000 },
+        "sourceUrl": { "type": "string", "maxLength": 1000 },
+        "linkedTransactionId": { "type": "string", "maxLength": 128 },
+        "processingStatus": { "type": "string", "enum": ["complete", "partial", "pending", "error"] },
+        "processingError": { "type": "string", "maxLength": 300 },
+        "sourceOrigin": { "type": "string", "enum": ["manual", "qr", "url", "xml", "ocr", "import"] },
+        "lowConfidenceFields": { "type": "array" },
+        "warranty": { "type": "object" },
+        "sourceRecordId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "kind", "store", "issuedAt", "totalCents", "items", "createdAt", "updatedAt"]
+    },
+    "LoyaltyHolder": {
+      "title": "LoyaltyHolder",
+      "description": "Family or personal loyalty program holder with optional masked CPF and notes.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "relationship": { "type": "string", "enum": ["Titular", "Cônjuge", "Filho(a)", "Familiar", "Amigo", "Outro"] },
+        "cpfMasked": { "type": "string", "maxLength": 20 },
+        "notes": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "relationship", "cpfMasked", "notes", "createdAt", "updatedAt"]
+    },
+    "LoyaltyAccount": {
+      "title": "LoyaltyAccount",
+      "description": "User or family loyalty points/miles program account with balance, expiry, and CPF quota.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "holderId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "holderName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "programId": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "programName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "category": { "type": "string", "enum": ["aerea", "banco", "varejo"] },
+        "accountNumber": { "type": "string", "maxLength": 40 },
+        "tier": { "type": "string", "maxLength": 40 },
+        "balance": { "type": "integer", "minimum": 0 },
+        "expiringPoints": { "type": "integer", "minimum": 0 },
+        "expirationDate": { "type": "string", "maxLength": 20 },
+        "avgCpm": { "type": "number", "minimum": 0 },
+        "cpfsUsed": { "type": "integer", "minimum": 0, "maximum": 50 },
+        "cpfLimit": { "type": "integer", "minimum": 0, "maximum": 50 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "holderId", "holderName", "programId", "programName", "category", "accountNumber", "tier", "balance", "expiringPoints", "expirationDate", "avgCpm", "cpfsUsed", "cpfLimit", "createdAt", "updatedAt"]
+    },
+    "PointTransaction": {
+      "title": "PointTransaction",
+      "description": "Immutable points/miles accumulation, redemption, transfer, sale, or adjustment ledger entry.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "accountId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "programName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "holderName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "type": { "type": "string", "enum": ["acumulo", "resgate", "transferencia_entrada", "transferencia_saida", "venda", "expiracao", "ajuste"] },
+        "points": { "type": "integer" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "date": { "type": "string", "maxLength": 20 },
+        "cpm": { "type": "number", "minimum": 0 },
+        "totalBrl": { "type": "number", "minimum": 0 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "accountId", "programName", "holderName", "type", "points", "description", "date", "cpm", "totalBrl", "createdAt", "updatedAt"]
+    },
+    "AgendaEventOverride": {
+      "title": "AgendaEventOverride",
+      "description": "Per-occurrence Agenda view override (complete, postpone, hide, shift swap) without mutating external financial sources.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sourceType": { "type": "string", "enum": ["personal", "holiday", "birthday", "bill", "annual_expense", "card_snapshot", "payable_installment", "revenue_entry", "garage_maintenance", "garage_document", "garage_reminder", "garage_fine", "trip", "note"] },
+        "sourceId": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "occurrenceDate": { "type": "string", "maxLength": 10, "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "action": { "type": "string", "enum": ["completed", "postponed", "hidden", "modified"] },
+        "postponedToDate": { "type": "string", "maxLength": 10 },
+        "postponedToTime": { "type": "string", "maxLength": 10 },
+        "overrideTitle": { "type": "string", "maxLength": 160 },
+        "overrideTime": { "type": "string", "maxLength": 10 },
+        "overrideEndTime": { "type": "string", "maxLength": 10 },
+        "overrideBreakRule": { "type": "string", "maxLength": 120 },
+        "overrideCompany": { "type": "string", "maxLength": 140 },
+        "overrideDescription": { "type": "string", "maxLength": 500 },
+        "note": { "type": "string", "maxLength": 300 },
+        "updatedAtIso": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "sourceType", "sourceId", "occurrenceDate", "action", "updatedAtIso", "createdAt", "updatedAt"]
+    },
+    "ContactCategory": {
+      "title": "ContactCategory",
+      "description": "User-customizable contact category with stable ID, palette color, and commercial flag.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "color": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "isCommercial": { "type": "boolean" },
+        "order": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "color", "isCommercial", "order", "createdAt", "updatedAt"]
+    },
+    "ContactSubcategory": {
+      "title": "ContactSubcategory",
+      "description": "User-customizable contact subcategory linked to a parent category ID.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "color": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "order": { "type": "integer", "minimum": 0, "maximum": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "categoryId", "name", "color", "order", "createdAt", "updatedAt"]
+    },
+    "AgendaContact": {
+      "title": "AgendaContact",
+      "description": "Personal or commercial contact with birthday, communication channels, and category/subcategory classification.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "nickname": { "type": "string", "maxLength": 80 },
+        "birthDay": { "type": "integer" },
+        "birthMonth": { "type": "integer" },
+        "birthYear": { "type": "integer" },
+        "phones": { "type": "array" },
+        "emails": { "type": "array" },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "subcategoryId": { "type": "string", "maxLength": 128 },
+        "categoryColor": { "type": "string", "maxLength": 20 },
+        "subcategoryColor": { "type": "string", "maxLength": 20 },
+        "relationship": { "type": "string", "maxLength": 80 },
+        "company": { "type": "string", "maxLength": 140 },
+        "profession": { "type": "string", "maxLength": 120 },
+        "address": { "type": "string", "maxLength": 220 },
+        "city": { "type": "string", "maxLength": 100 },
+        "state": { "type": "string", "maxLength": 4 },
+        "website": { "type": "string", "maxLength": 220 },
+        "notes": { "type": "string", "maxLength": 600 },
+        "birthdayReminderEnabled": { "type": "boolean" },
+        "birthdayReminderDaysBefore": { "type": "integer", "minimum": 0, "maximum": 60 },
+        "notificationsEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "phones", "emails", "categoryId", "birthdayReminderEnabled", "birthdayReminderDaysBefore", "notificationsEnabled", "createdAt", "updatedAt"]
+    },
+    "AgendaAlarm": {
+      "title": "AgendaAlarm",
+      "description": "User alarm definition with repeat days, tone preference, enabled toggle, and snooze timestamp.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "time": { "type": "string", "maxLength": 5, "pattern": "^\\d{2}:\\d{2}$" },
+        "repeatDays": { "type": "array" },
+        "soundEnabled": { "type": "boolean" },
+        "soundTone": { "type": "string", "enum": ["chime", "bell", "pulse"] },
+        "enabled": { "type": "boolean" },
+        "snoozeUntilIso": { "type": "string", "maxLength": 40 },
+        "lastTriggeredKey": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "name", "time", "repeatDays", "soundEnabled", "soundTone", "enabled", "createdAt", "updatedAt"]
+    },
+    "AgendaNote": {
+      "title": "AgendaNote",
+      "description": "User note, checklist, or multistore shopping list optionally linked to an Agenda event.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "type": { "type": "string", "enum": ["free", "checklist", "shopping"] },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "color": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "content": { "type": "string", "maxLength": 4000 },
+        "checklistItems": { "type": "array" },
+        "stores": { "type": "array" },
+        "linkedAgendaEventId": { "type": "string", "maxLength": 128 },
+        "linkedDate": { "type": "string", "maxLength": 10 },
+        "updatedAtIso": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "type", "title", "color", "content", "checklistItems", "stores", "updatedAtIso", "createdAt", "updatedAt"]
+    },
+    "CalculatorHistoryEntry": {
+      "title": "CalculatorHistoryEntry",
+      "description": "Saved normal/scientific calculator expression and result.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "expression": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "result": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "mode": { "type": "string", "enum": ["normal", "scientific"] },
+        "angleUnit": { "type": "string", "enum": ["DEG", "RAD"] },
+        "createdAtIso": { "type": "string", "maxLength": 40 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "expression", "result", "mode", "angleUnit", "createdAtIso", "createdAt", "updatedAt"]
+    },
+    "AgendaSettings": {
+      "title": "AgendaSettings",
+      "description": "User preferences for Agenda clock format, snooze duration, 29/02 birthday rule, shopping highlighter, weather location, and theme.",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timeFormat": { "type": "string", "enum": ["24h", "12h"] },
+        "showSeconds": { "type": "boolean" },
+        "defaultSnoozeMinutes": { "type": "integer", "minimum": 1, "maximum": 120 },
+        "leapYearBirthdayRule": { "type": "string", "enum": ["feb28", "mar01"] },
+        "shoppingHighlightColor": { "type": "string", "minLength": 4, "maxLength": 20 },
+        "notificationsEnabled": { "type": "boolean" },
+        "alarmSoundDefault": { "type": "boolean" },
+        "weatherLocationName": { "type": "string", "maxLength": 140 },
+        "weatherLat": { "type": "number" },
+        "weatherLon": { "type": "number" },
+        "themeMode": { "type": "string", "enum": ["light", "dark"] },
+        "hiddenDefaultCategoryIds": { "type": "array" },
+        "hiddenDefaultSubcategoryIds": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ownerId", "timeFormat", "showSeconds", "defaultSnoozeMinutes", "leapYearBirthdayRule", "shoppingHighlightColor", "notificationsEnabled", "alarmSoundDefault", "weatherLocationName", "themeMode", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -649,6 +988,10 @@
     "/users/{userId}/monthlyBills/{billId}": {
       "schema": { "$ref": "#/entities/MonthlyBill" },
       "description": "User monthly expense bills."
+    },
+    "/users/{userId}/paymentEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/PaymentEvent" },
+      "description": "Audit events for payments, partial disbursements, early payoffs, corrections, and reversals."
     },
     "/users/{userId}/payableContracts/{contractId}": {
       "schema": { "$ref": "#/entities/PayableContract" },
@@ -717,6 +1060,54 @@
     "/users/{userId}/trips/{tripId}": {
       "schema": { "$ref": "#/entities/TripPlan" },
       "description": "User trip plans."
+    },
+    "/users/{userId}/fiscalReceipts/{noteId}": {
+      "schema": { "$ref": "#/entities/FiscalReceipt" },
+      "description": "User fiscal receipts (NFC-e / DANFE), extracted line items, and optional attachments."
+    },
+    "/users/{userId}/loyaltyHolders/{holderId}": {
+      "schema": { "$ref": "#/entities/LoyaltyHolder" },
+      "description": "User and family loyalty program holders."
+    },
+    "/users/{userId}/loyaltyAccounts/{accountId}": {
+      "schema": { "$ref": "#/entities/LoyaltyAccount" },
+      "description": "Loyalty points and airline miles program accounts."
+    },
+    "/users/{userId}/pointTransactions/{txId}": {
+      "schema": { "$ref": "#/entities/PointTransaction" },
+      "description": "Immutable ledger entries for loyalty points and miles."
+    },
+    "/users/{userId}/agendaOverrides/{overrideId}": {
+      "schema": { "$ref": "#/entities/AgendaEventOverride" },
+      "description": "Per-occurrence Agenda overrides (complete, postpone, hide, shift exception)."
+    },
+    "/users/{userId}/contactCategories/{categoryId}": {
+      "schema": { "$ref": "#/entities/ContactCategory" },
+      "description": "User-customizable contact categories."
+    },
+    "/users/{userId}/contactSubcategories/{subcategoryId}": {
+      "schema": { "$ref": "#/entities/ContactSubcategory" },
+      "description": "User-customizable contact subcategories."
+    },
+    "/users/{userId}/agendaContacts/{contactId}": {
+      "schema": { "$ref": "#/entities/AgendaContact" },
+      "description": "Personal and commercial directory contacts with recurring birthdays."
+    },
+    "/users/{userId}/agendaAlarms/{alarmId}": {
+      "schema": { "$ref": "#/entities/AgendaAlarm" },
+      "description": "User alarms for clock tool."
+    },
+    "/users/{userId}/agendaNotes/{noteId}": {
+      "schema": { "$ref": "#/entities/AgendaNote" },
+      "description": "User notes, checklists, and multistore shopping lists."
+    },
+    "/users/{userId}/calculatorHistory/{entryId}": {
+      "schema": { "$ref": "#/entities/CalculatorHistoryEntry" },
+      "description": "Saved calculator expression history."
+    },
+    "/users/{userId}/agendaSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/AgendaSettings" },
+      "description": "User preferences for Agenda module and tools."
     }
   }
 }

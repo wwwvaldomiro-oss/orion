@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, Link, useLocation } from "react-router-dom";
 import {
   CalendarDays,
@@ -9,6 +9,8 @@ import {
   LineChart,
   LogOut,
   Menu,
+  Plane,
+  Search,
   TrendingDown,
   TrendingUp,
   UserRound,
@@ -16,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { BrandLogo } from "@/components/BrandLogos";
+import { GlobalSearchModal } from "@/components/GlobalSearchModal";
 import { useOrion } from "@/store/orionContext";
 
 const FINANCE_NAV = [
@@ -28,9 +31,10 @@ const FINANCE_NAV = [
 ];
 
 const PERSONAL_NAV = [
-  { to: "/agenda", label: "Agenda (Brasília)", icon: CalendarDays },
+  { to: "/agenda", label: "Agenda", icon: CalendarDays },
   { to: "/compras", label: "Lista de Compras", icon: ClipboardList },
   { to: "/veiculos", label: "Veículo", icon: CarFront },
+  { to: "/viagens", label: "Viagens", icon: Plane },
 ];
 
 function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
@@ -115,18 +119,36 @@ export function AppShell({
   title,
   subtitle,
   actions,
+  hideGlobalSearch = false,
   children,
 }: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
+  hideGlobalSearch?: boolean;
   children: ReactNode;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const location = useLocation();
 
+  useEffect(() => {
+    if (hideGlobalSearch) {
+      setSearchOpen(false);
+      return;
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [hideGlobalSearch]);
+
   return (
-    <div className="flex min-h-screen bg-[#f7f8fa] text-[#0c1928]">
+    <div className="flex min-h-screen bg-[#f7f8fa] text-[#0c1928] dark:bg-[#08121d] dark:text-slate-100">
       {/* Desktop Sidebar */}
       <aside className="orion-sidebar no-print hidden w-72 shrink-0 flex-col p-5 md:sticky md:top-0 md:flex md:h-screen">
         <SidebarContent />
@@ -155,27 +177,44 @@ export function AppShell({
 
       {/* Main Content */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-[#dce2e6] bg-white/90 px-4 py-3 backdrop-blur-md md:px-8">
+        <header className="no-print sticky top-0 z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#dce2e6] bg-white/90 px-4 py-3 backdrop-blur-md dark:border-[#233c53] dark:bg-[#0e1e2e]/95 md:px-8">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setDrawerOpen(true)}
               aria-label="Abrir menu"
-              className="grid size-10 shrink-0 place-items-center rounded-lg border border-[#dce2e6] text-[#0c1928] hover:bg-[#f0f3f5] md:hidden"
+              className="grid size-10 shrink-0 place-items-center rounded-lg border border-[#dce2e6] text-[#0c1928] hover:bg-[#f0f3f5] dark:border-[#233c53] dark:text-slate-100 dark:hover:bg-[#152b3f] md:hidden"
             >
               <Menu className="size-5" />
             </button>
             <div className="min-w-0">
-              <h1 className="orion-page-title truncate text-xl font-semibold text-[#0c1928] md:text-2xl">
+              <h1 className="orion-page-title truncate text-xl font-semibold text-[#0c1928] dark:text-slate-100 md:text-2xl">
                 {title}
               </h1>
               {subtitle && (
-                <p className="mt-1 truncate text-xs text-[#52616a]">{subtitle}</p>
+                <p className="mt-1 truncate text-xs text-[#52616a] dark:text-slate-400">{subtitle}</p>
               )}
             </div>
           </div>
 
-          {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          <div className="flex items-center gap-2">
+            {!hideGlobalSearch && (
+              <button
+                type="button"
+                onClick={() => setSearchOpen(true)}
+                aria-label="Busca global (Ctrl+K)"
+                className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#dce2e6] bg-[#f7f8fa] px-2.5 text-xs text-[#52616a] transition-colors hover:border-[#b99555] hover:bg-white hover:text-[#0c1928] dark:border-[#233c53] dark:bg-[#132537] dark:text-slate-300 dark:hover:bg-[#152b3f] dark:hover:text-white lg:w-64"
+              >
+                <Search className="size-3.5 shrink-0 text-[#173d4a] dark:text-[#b99555]" />
+                <span className="hidden truncate sm:inline">Buscar no Órion...</span>
+                <kbd className="ml-auto hidden rounded border border-[#dce2e6] bg-white px-1.5 py-0.5 font-mono text-[10px] font-semibold text-[#52616a] dark:border-[#2b4761] dark:bg-[#0e1e2e] dark:text-slate-300 sm:inline">
+                  Ctrl+K
+                </kbd>
+              </button>
+            )}
+
+            {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
+          </div>
         </header>
 
         <main className="mx-auto w-full max-w-[1440px] flex-1 p-4 pb-24 md:p-8 md:pb-10">
@@ -186,7 +225,7 @@ export function AppShell({
       {/* Mobile Bottom Quick Bar */}
       <nav
         aria-label="Navegação rápida"
-        className="no-print fixed right-0 bottom-0 left-0 z-30 grid grid-cols-4 border-t border-[#dce2e6] bg-white/95 px-2 py-1.5 backdrop-blur-md md:hidden"
+        className="no-print fixed right-0 bottom-0 left-0 z-30 grid grid-cols-4 border-t border-[#dce2e6] bg-white/95 px-2 py-1.5 backdrop-blur-md dark:border-[#233c53] dark:bg-[#0e1e2e]/95 md:hidden"
       >
         {[
           { to: "/painel", label: "Painel", icon: LayoutDashboard },
@@ -202,7 +241,9 @@ export function AppShell({
               key={item.to}
               to={item.to}
               className={`flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl text-[11px] font-semibold ${
-                active ? "bg-[#edf1f3] text-[#173d4a]" : "text-[#52616a]"
+                active
+                  ? "bg-[#edf1f3] text-[#173d4a] dark:bg-[#152b3f] dark:text-[#b99555]"
+                  : "text-[#52616a] dark:text-slate-400"
               }`}
             >
               <item.icon className="size-4" />
@@ -211,6 +252,10 @@ export function AppShell({
           );
         })}
       </nav>
+
+      {!hideGlobalSearch && (
+        <GlobalSearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+      )}
     </div>
   );
 }

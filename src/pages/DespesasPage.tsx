@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, Layers, Plus, Printer, Upload } from "lucide-react";
+import { CreditCard, Download, Layers, Loader2, Paperclip, Plus, Printer, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
+import { FinancialHistorySection } from "@/components/finance/FinancialHistorySection";
+import { HistoryCorrectionModal } from "@/components/finance/HistoryCorrectionModal";
 import { useOrion } from "@/store/orionContext";
 import {
   autoNote,
@@ -14,7 +16,17 @@ import {
 } from "@/lib/domain/money";
 import { EXPENSE_CATEGORIES } from "@/lib/domain/contracts";
 import { downloadBlob } from "@/lib/domain/invoice";
-import type { AnnualExpenseRow, MonthlyBill, PayableInstallment } from "@/types/orion";
+import {
+  buildPaymentHistoryRows,
+  suggestOpenFinanceMatches,
+  type UnifiedHistoryRow,
+} from "@/lib/domain/ledgerHistory";
+import type {
+  AnnualExpenseRow,
+  MonthlyBill,
+  PayableInstallment,
+  PaymentAttachmentRef,
+} from "@/types/orion";
 
 type Tab = "monthly" | "annual" | "contracts" | "history";
 
@@ -38,6 +50,7 @@ export function DespesasPage() {
     addMonthlyBill,
     updateAnnualCell,
     addAnnualCreditor,
+    uploadHistoryAttachment,
   } = useOrion();
   const today = todayBR();
   const [tab, setTab] = useState<Tab>("annual");
@@ -48,21 +61,34 @@ export function DespesasPage() {
     state.payableContracts[0]?.id ?? "",
   );
 
-  // Pay monthly bill modal
+  // Settled item correction modal shortcut
+  const [settledEditRow, setSettledEditRow] = useState<UnifiedHistoryRow | null>(null);
+
+  // Pay monthly bill / installment modal
   const [payTarget, setPayTarget] = useState<MonthlyBill | null>(null);
   const [payInstallmentTarget, setPayInstallmentTarget] = useState<PayableInstallment | null>(null);
   const [payAmount, setPayAmount] = useState("");
   const [payDate, setPayDate] = useState(today);
   const [payQuits, setPayQuits] = useState(true);
+  const [payDiscount, setPayDiscount] = useState("0,00");
+  const [paySurcharge, setPaySurcharge] = useState("0,00");
+  const [payEarlyPayoff, setPayEarlyPayoff] = useState(false);
   const [payNote, setPayNote] = useState("");
   const [payAccountId, setPayAccountId] = useState<string>("");
+  const [payBankTxId, setPayBankTxId] = useState<string>("");
+  const [payAttachments, setPayAttachments] = useState<PaymentAttachmentRef[]>([]);
+  const [uploadingPayAtt, setUploadingPayAtt] = useState(false);
+  const [submittingPay, setSubmittingPay] = useState(false);
 
   // Add monthly bill modal
   const [billOpen, setBillOpen] = useState(false);
   const [billCreditor, setBillCreditor] = useState("");
+  const [billDescription, setBillDescription] = useState("");
   const [billCategory, setBillCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [billDueDate, setBillDueDate] = useState(today);
   const [billAmount, setBillAmount] = useState("");
+  const [billIsCardInvoice, setBillIsCardInvoice] = useState(false);
+  const [billCardId, setBillCardId] = useState("");
 
   // Add annual creditor modal
   const [creditorOpen, setCreditorOpen] = useState(false);
@@ -79,6 +105,10 @@ export function DespesasPage() {
   const [cellPaid, setCellPaid] = useState("");
   const [cellDate, setCellDate] = useState(today);
   const [cellSettled, setCellSettled] = useState(true);
+  const [cellAccountId, setCellAccountId] = useState("");
+  const [cellBankTxId, setCellBankTxId] = useState("");
+  const [cellNote, setCellNote] = useState("");
+  const [savingCell, setSavingCell] = useState(false);
 
   const availableYears = useMemo(() => {
     const set = new Set<number>([2025, 2026, 2027]);
@@ -152,36 +182,105 @@ export function DespesasPage() {
     });
   }, [annualRows]);
 
-  const paymentHistory = useMemo(
+  const paymentHistoryRows = useMemo(() => buildPaymentHistoryRows(state), [state]);
+
+  const parsedPayCents = parseBRL(payAmount) ?? 0;
+  const openFinancePayMatches = useMemo(
     () =>
-      state.monthlyBills
-        .filter((b) => Boolean(b.paidDate))
-        .sort((a, b) => (b.paidDate ?? "").localeCompare(a.paidDate ?? "")),
-    [state.monthlyBills],
+      suggestOpenFinanceMatches(
+        state.transactions,
+        "payment",
+        payAccountId || null,
+        parsedPayCents,
+        payDate,
+      ),
+    [state.transactions, payAccountId, parsedPayCents, payDate],
+  );
+
+  const parsedCellPaidCents = parseBRL(cellPaid) ?? parseBRL(cellExpected) ?? 0;
+  const openFinanceCellMatches = useMemo(
+    () =>
+      suggestOpenFinanceMatches(
+        state.transactions,
+        "payment",
+        cellAccountId || null,
+        parsedCellPaidCents,
+        cellDate,
+      ),
+    [state.transactions, cellAccountId, parsedCellPaidCents, cellDate],
   );
 
   function openPayDialog(bill: MonthlyBill) {
+    if (bill.isSettled) {
+      const existingRow = paymentHistoryRows.find((r) => r.rawRefs.billId === bill.id);
+      if (existingRow) {
+        setSettledEditRow(existingRow);
+        return;
+      }
+    }
+    const alreadyPaid = bill.paidCents ?? 0;
+    const remaining = Math.max(0, bill.expectedCents - alreadyPaid);
     setPayInstallmentTarget(null);
     setPayTarget(bill);
-    setPayAmount(((bill.paidCents ?? bill.expectedCents) / 100).toFixed(2).replace(".", ","));
-    setPayDate(bill.paidDate ?? today);
-    setPayQuits(bill.isSettled || true);
-    setPayNote(bill.note ?? "");
+    setPayAmount((remaining / 100).toFixed(2).replace(".", ","));
+    setPayDate(today);
+    setPayQuits(true);
+    setPayDiscount("0,00");
+    setPaySurcharge("0,00");
+    setPayEarlyPayoff(false);
+    setPayNote(alreadyPaid > 0 ? "" : (bill.note ?? ""));
     setPayAccountId(bill.accountId ?? "");
+    setPayBankTxId("");
+    setPayAttachments([]);
   }
 
   function openPayInstallmentDialog(inst: PayableInstallment) {
+    if (inst.isSettled) {
+      const existingRow = paymentHistoryRows.find((r) => r.rawRefs.installmentId === inst.id);
+      if (existingRow) {
+        setSettledEditRow(existingRow);
+        return;
+      }
+    }
+    const alreadyPaid = inst.paidCents ?? 0;
+    const remaining = Math.max(0, inst.expectedCents - alreadyPaid);
     setPayTarget(null);
     setPayInstallmentTarget(inst);
-    setPayAmount(((inst.paidCents ?? inst.expectedCents) / 100).toFixed(2).replace(".", ","));
-    setPayDate(inst.paidDate ?? today);
+    setPayAmount((remaining / 100).toFixed(2).replace(".", ","));
+    setPayDate(today);
     setPayQuits(true);
-    setPayNote(inst.note ?? "");
+    setPayDiscount("0,00");
+    setPaySurcharge("0,00");
+    setPayEarlyPayoff(false);
+    setPayNote(alreadyPaid > 0 ? "" : (inst.note ?? ""));
     setPayAccountId(inst.accountId ?? "");
+    setPayBankTxId("");
+    setPayAttachments([]);
   }
 
-  function handlePaySubmit(e: React.FormEvent) {
+  async function handlePayAttachmentUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    const targetId = payTarget?.id ?? payInstallmentTarget?.id;
+    if (!files.length || !targetId) return;
+    setUploadingPayAtt(true);
+    try {
+      const uploaded: PaymentAttachmentRef[] = [];
+      for (const f of files) {
+        uploaded.push(await uploadHistoryAttachment(f, targetId));
+      }
+      setPayAttachments((prev) => [...prev, ...uploaded]);
+      toast.success("Comprovante anexado ao pagamento.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar comprovante.");
+    } finally {
+      setUploadingPayAtt(false);
+    }
+  }
+
+  async function handlePaySubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submittingPay) return;
     const target = payTarget ?? payInstallmentTarget;
     if (!target) return;
     const cents = parseBRL(payAmount);
@@ -189,44 +288,78 @@ export function DespesasPage() {
       toast.error("Informe um valor pago válido.");
       return;
     }
+    const discountCents = Math.max(0, parseBRL(payDiscount) ?? 0);
+    const surchargeCents = Math.max(0, parseBRL(paySurcharge) ?? 0);
+    const prevPaid = !target.isSettled ? (target.paidCents ?? 0) : 0;
+    const totalAfter = prevPaid + cents;
     const finalNote =
-      payNote.trim() || autoNote(target.dueDate, payDate, target.expectedCents, cents, payQuits);
+      payNote.trim() ||
+      autoNote(target.dueDate, payDate, target.expectedCents, totalAfter, payQuits);
     const chosenAccount = payAccountId.trim() ? payAccountId.trim() : null;
-    if (payTarget) {
-      void payMonthlyBill(payTarget.id, cents, payDate, payQuits, finalNote, chosenAccount);
-      setPayTarget(null);
-    } else if (payInstallmentTarget) {
-      void payPayableInstallment(
-        payInstallmentTarget.id,
-        cents,
-        payDate,
-        payQuits,
-        finalNote,
-        chosenAccount,
-      );
-      setPayInstallmentTarget(null);
+    const chosenBankTx = payBankTxId.trim() ? payBankTxId.trim() : null;
+    const idempotencyKey = `pay-${target.id}-${Date.now()}`;
+
+    setSubmittingPay(true);
+    try {
+      const opts = {
+        discountCents,
+        surchargeCents,
+        bankTransactionId: chosenBankTx,
+        attachments: payAttachments,
+        isEarlyPayoff: payEarlyPayoff,
+        idempotencyKey,
+      };
+      if (payTarget) {
+        await payMonthlyBill(payTarget.id, cents, payDate, payQuits, finalNote, chosenAccount, opts);
+        setPayTarget(null);
+      } else if (payInstallmentTarget) {
+        await payPayableInstallment(
+          payInstallmentTarget.id,
+          cents,
+          payDate,
+          payQuits,
+          finalNote,
+          chosenAccount,
+          opts,
+        );
+        setPayInstallmentTarget(null);
+      }
+      toast.success("Pagamento registrado no histórico.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao registrar pagamento.");
+    } finally {
+      setSubmittingPay(false);
     }
-    toast.success("Pagamento registrado.");
   }
 
-  function handleAddBill(e: React.FormEvent) {
+  async function handleAddBill(e: React.FormEvent) {
     e.preventDefault();
     const cents = parseBRL(billAmount);
     if (!billCreditor.trim() || !cents || cents <= 0) {
       toast.error("Informe credor e valor.");
       return;
     }
-    void addMonthlyBill({
-      period: billDueDate.slice(0, 7),
-      creditor: billCreditor.trim(),
-      category: billCategory,
-      dueDate: billDueDate,
-      expectedCents: cents,
-    });
-    setBillOpen(false);
-    setBillCreditor("");
-    setBillAmount("");
-    toast.success("Despesa avulsa adicionada.");
+    try {
+      await addMonthlyBill({
+        period: billDueDate.slice(0, 7),
+        creditor: billCreditor.trim(),
+        description: billDescription.trim() || undefined,
+        category: billCategory,
+        dueDate: billDueDate,
+        expectedCents: cents,
+        isCardInvoice: billIsCardInvoice || undefined,
+        cardId: billIsCardInvoice && billCardId ? billCardId : undefined,
+      });
+      setBillOpen(false);
+      setBillCreditor("");
+      setBillDescription("");
+      setBillAmount("");
+      setBillIsCardInvoice(false);
+      setBillCardId("");
+      toast.success("Obrigação adicionada.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao adicionar obrigação.");
+    }
   }
 
   function handleAddCreditor(e: React.FormEvent) {
@@ -257,31 +390,54 @@ export function DespesasPage() {
       paidDate: null,
       isSettled: false,
     };
+    const linked = billsByAnnualAndPeriod.get(`${row.id}:${row.year}-${monthKey}`) ?? [];
+    const primaryBill = linked[0];
     const safeExpected = cell.expectedCents ?? 0;
     setCellEdit({ row, monthKey });
     setCellExpected((safeExpected / 100).toFixed(2).replace(".", ","));
     setCellPaid(((cell.paidCents ?? safeExpected) / 100).toFixed(2).replace(".", ","));
     setCellDate(cell.paidDate ?? today);
     setCellSettled(cell.isSettled);
+    setCellAccountId(primaryBill?.accountId ?? "");
+    setCellBankTxId(primaryBill?.bankTransactionId ?? "");
+    setCellNote(cell.note ?? primaryBill?.note ?? "");
+    setSavingCell(false);
   }
 
-  function saveCellEdit(e: React.FormEvent) {
+  async function saveCellEdit(e: React.FormEvent) {
     e.preventDefault();
-    if (!cellEdit) return;
+    if (!cellEdit || savingCell) return;
     const exp = parseBRL(cellExpected);
     const paid = parseBRL(cellPaid);
     if (exp === null) {
       toast.error("Valor previsto inválido.");
       return;
     }
-    void updateAnnualCell(cellEdit.row.id, cellEdit.monthKey, {
-      expectedCents: exp,
-      paidCents: cellSettled ? (paid ?? exp) : null,
-      paidDate: cellSettled ? cellDate : null,
-      isSettled: cellSettled,
-    });
-    setCellEdit(null);
-    toast.success("Célula da grade anual atualizada.");
+    setSavingCell(true);
+    try {
+      await updateAnnualCell(
+        cellEdit.row.id,
+        cellEdit.monthKey,
+        {
+          expectedCents: exp,
+          paidCents: cellSettled ? (paid ?? exp) : null,
+          paidDate: cellSettled ? cellDate : null,
+          isSettled: cellSettled,
+          ...(cellNote.trim() ? { note: cellNote.trim() } : {}),
+        },
+        {
+          accountId: cellAccountId.trim() || null,
+          bankTransactionId: cellBankTxId.trim() || null,
+          idempotencyKey: `cell-${cellEdit.row.id}-${cellEdit.monthKey}-${Date.now()}`,
+        },
+      );
+      setCellEdit(null);
+      toast.success("Célula da grade anual atualizada.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao atualizar célula.");
+    } finally {
+      setSavingCell(false);
+    }
   }
 
   function exportCsv() {
@@ -554,21 +710,26 @@ export function DespesasPage() {
                 <tbody className="divide-y divide-[#edf1f3]">
                   {monthBills.map((b) => {
                     const adj = expensePaymentAdjustment(b.expectedCents, b.paidCents, b.isSettled);
+                    const hasPartial = !b.isSettled && (b.paidCents ?? 0) > 0;
                     return (
                       <tr key={b.id} className="hover:bg-[#f7f8fa]">
                         <td className="py-2.5 pr-3">
-                          <div className="font-semibold text-[#0c1928]">{b.creditor}</div>
+                          <div className="flex flex-wrap items-center gap-1.5 font-semibold text-[#0c1928]">
+                            <span>{b.creditor}</span>
+                            {b.isCardInvoice && (
+                              <span className="inline-flex items-center gap-1 rounded bg-[#edf1f3] px-1.5 py-0.5 text-[10px] font-semibold text-[#173d4a]">
+                                <CreditCard className="size-2.5" /> Fatura de cartão
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs text-[#52616a]">
                             {b.category}
                             {b.description && b.description !== b.creditor ? ` · ${b.description}` : ""}
                             {b.note ? ` · ${b.note}` : ""}
                           </div>
-                          {b.isSettled && (
+                          {b.accountId && (b.isSettled || hasPartial) && (
                             <div className="text-[11px] text-[#7a8994]">
-                              Origem:{" "}
-                              {b.accountId
-                                ? (bankNameById.get(b.accountId) ?? b.accountId)
-                                : "Conta de origem não informada"}
+                              Origem: {bankNameById.get(b.accountId) ?? b.accountId}
                             </div>
                           )}
                         </td>
@@ -590,6 +751,11 @@ export function DespesasPage() {
                                   ? "Quitado c/ acréscimo"
                                   : "Quitado"}
                             </span>
+                          ) : hasPartial ? (
+                            <span className="text-[#173d4a]">
+                              Parcial · Restam{" "}
+                              {formatBRL(Math.max(0, b.expectedCents - (b.paidCents ?? 0)))}
+                            </span>
                           ) : b.dueDate < today ? (
                             <span className="text-[#dc2626]">Vencido</span>
                           ) : (
@@ -602,7 +768,7 @@ export function DespesasPage() {
                             onClick={() => openPayDialog(b)}
                             className="rounded-md bg-[#173d4a] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#0c1928]"
                           >
-                            {b.isSettled ? "Editar" : "Pagar"}
+                            {b.isSettled ? "Ajustar" : hasPartial ? "Complementar" : "Pagar"}
                           </button>
                         </td>
                       </tr>
@@ -715,6 +881,7 @@ export function DespesasPage() {
                         </thead>
                         <tbody className="divide-y divide-[#edf1f3]">
                           {activeContractInstallments.map((inst) => {
+                            const hasPartial = !inst.isSettled && (inst.paidCents ?? 0) > 0;
                             const overdue = !inst.isSettled && inst.dueDate < today;
                             return (
                               <tr key={inst.id} className="hover:bg-[#f7f8fa]">
@@ -735,22 +902,26 @@ export function DespesasPage() {
                                     className={`font-semibold ${
                                       inst.isSettled
                                         ? "text-[#16a34a]"
-                                        : overdue
-                                          ? "text-[#dc2626]"
-                                          : "text-[#d97706]"
+                                        : hasPartial
+                                          ? "text-[#173d4a]"
+                                          : overdue
+                                            ? "text-[#dc2626]"
+                                            : "text-[#d97706]"
                                     }`}
                                   >
                                     {inst.isSettled
                                       ? `Quitada (${formatDateBR(inst.paidDate)})`
-                                      : overdue
-                                        ? "Vencida"
-                                        : "Em aberto"}
+                                      : hasPartial
+                                        ? `Parcial · Restam ${formatBRL(
+                                            Math.max(0, inst.expectedCents - (inst.paidCents ?? 0)),
+                                          )}`
+                                        : overdue
+                                          ? "Vencida"
+                                          : "Em aberto"}
                                   </div>
-                                  {inst.isSettled && (
+                                  {inst.accountId && (inst.isSettled || hasPartial) && (
                                     <div className="text-[11px] text-[#7a8994]">
-                                      {inst.accountId
-                                        ? (bankNameById.get(inst.accountId) ?? inst.accountId)
-                                        : "Conta de origem não informada"}
+                                      {bankNameById.get(inst.accountId) ?? inst.accountId}
                                     </div>
                                   )}
                                   {inst.note && (
@@ -763,7 +934,7 @@ export function DespesasPage() {
                                     onClick={() => openPayInstallmentDialog(inst)}
                                     className="rounded bg-[#173d4a] px-2 py-1 text-[11px] font-semibold text-white hover:bg-[#0c1928]"
                                   >
-                                    {inst.isSettled ? "Editar" : "Pagar"}
+                                    {inst.isSettled ? "Ajustar" : hasPartial ? "Complementar" : "Pagar"}
                                   </button>
                                 </td>
                               </tr>
@@ -781,252 +952,406 @@ export function DespesasPage() {
 
         {/* Tab: Payment History */}
         {tab === "history" && (
-          <div className="rounded-xl border border-[#dce2e6] bg-white p-5">
-            <h2 className="text-base font-semibold text-[#0c1928]">Histórico de Pagamentos</h2>
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="border-b border-[#dce2e6] text-xs text-[#52616a]">
-                    <th className="py-2 pr-3">Pago em</th>
-                    <th className="py-2 pr-3">Credor</th>
-                    <th className="py-2 pr-3">Conta de origem</th>
-                    <th className="py-2 pr-3">Competência</th>
-                    <th className="py-2 pr-3 text-right">Previsto</th>
-                    <th className="py-2 text-right">Pago</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#edf1f3]">
-                  {paymentHistory.map((h) => (
-                    <tr key={h.id}>
-                      <td className="tabular-nums py-2.5 pr-3 text-xs text-[#52616a]">
-                        {formatDateBR(h.paidDate)}
-                      </td>
-                      <td className="py-2.5 pr-3">
-                        <div className="font-medium text-[#0c1928]">{h.creditor}</div>
-                        {h.note && <div className="text-xs text-[#52616a]">{h.note}</div>}
-                      </td>
-                      <td className="py-2.5 pr-3 text-xs text-[#52616a]">
-                        {h.accountId
-                          ? (bankNameById.get(h.accountId) ?? h.accountId)
-                          : "Conta de origem não informada"}
-                      </td>
-                      <td className="tabular-nums py-2.5 pr-3 text-xs text-[#52616a]">{h.period}</td>
-                      <td className="tabular-nums py-2.5 pr-3 text-right text-xs text-[#52616a]">
-                        {formatBRL(h.expectedCents)}
-                      </td>
-                      <td className="tabular-nums py-2.5 text-right font-semibold text-[#16a34a]">
-                        {formatBRL(h.paidCents)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <FinancialHistorySection direction="payment" rows={paymentHistoryRows} />
         )}
       </div>
 
+      {/* Modal: Correction / Reversal for already settled obligations */}
+      <HistoryCorrectionModal row={settledEditRow} onClose={() => setSettledEditRow(null)} />
+
       {/* Modal: Pay Monthly Bill or Payable Installment */}
-      {(payTarget || payInstallmentTarget) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c1928]/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-[#0c1928]">Registrar Pagamento</h3>
-            <p className="mt-0.5 text-xs text-[#52616a]">
-              {payTarget
-                ? `${payTarget.creditor} · Previsto: ${formatBRL(payTarget.expectedCents)}`
-                : `Parcela #${payInstallmentTarget!.number} · Previsto: ${formatBRL(
-                    payInstallmentTarget!.expectedCents,
-                  )}`}
-            </p>
-            <form onSubmit={handlePaySubmit} className="mt-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Valor pago (R$)</label>
-                  <input
-                    value={payAmount}
-                    onChange={(e) => setPayAmount(e.target.value)}
-                    className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Data pagamento</label>
-                  <input
-                    type="date"
-                    value={payDate}
-                    onChange={(e) => setPayDate(e.target.value)}
-                    className="h-9 w-full rounded-lg border border-[#cbd3d8] px-2.5 text-sm"
-                    required
-                  />
-                </div>
+      {(payTarget || payInstallmentTarget) && (() => {
+        const activeTarget = payTarget ?? payInstallmentTarget!;
+        const alreadyPaid = !activeTarget.isSettled ? (activeTarget.paidCents ?? 0) : 0;
+        const remaining = Math.max(0, activeTarget.expectedCents - alreadyPaid);
+        return (
+          <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-[#0c1928]/60 p-4">
+            <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+              <div className="border-b border-[#edf1f3] px-6 py-4">
+                <h3 className="text-lg font-semibold text-[#0c1928]">Registrar Pagamento</h3>
+                <p className="mt-0.5 text-xs text-[#52616a]">
+                  {payTarget
+                    ? `${payTarget.creditor} · Previsto: ${formatBRL(payTarget.expectedCents)}`
+                    : `Parcela #${payInstallmentTarget!.number} · Previsto: ${formatBRL(
+                        payInstallmentTarget!.expectedCents,
+                      )}`}
+                  {alreadyPaid > 0 && (
+                    <>
+                      {" "}
+                      · Já pago: <strong className="text-[#16a34a]">{formatBRL(alreadyPaid)}</strong> ·
+                      Restante: <strong className="text-[#0c1928]">{formatBRL(remaining)}</strong>
+                    </>
+                  )}
+                </p>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-[#52616a]">
-                  Conta de origem do pagamento
+              <form onSubmit={handlePaySubmit} className="flex-1 space-y-3 overflow-y-auto p-6">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Valor pago agora (R$)
+                    </label>
+                    <input
+                      value={payAmount}
+                      onChange={(e) => setPayAmount(e.target.value)}
+                      className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">Data pagamento</label>
+                    <input
+                      type="date"
+                      value={payDate}
+                      onChange={(e) => setPayDate(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] px-2.5 text-sm"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">Desconto (R$)</label>
+                    <input
+                      value={payDiscount}
+                      onChange={(e) => setPayDiscount(e.target.value)}
+                      className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Acréscimo / juros (R$)
+                    </label>
+                    <input
+                      value={paySurcharge}
+                      onChange={(e) => setPaySurcharge(e.target.value)}
+                      className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Conta de origem do pagamento
+                    </label>
+                    <select
+                      value={payAccountId}
+                      onChange={(e) => setPayAccountId(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-xs"
+                    >
+                      <option value="">Não vincular / Pagamento avulso</option>
+                      {state.banks.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.institution} · {b.name} (Saldo: {formatBRL(b.balanceCents)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Conciliar com Open Finance
+                    </label>
+                    <select
+                      value={payBankTxId}
+                      onChange={(e) => setPayBankTxId(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-xs"
+                    >
+                      <option value="">Lançamento manual (debita saldo da conta)</option>
+                      {openFinancePayMatches.map((tx) => (
+                        <option key={tx.id} value={tx.id}>
+                          {formatDateBR(tx.date)} · {formatBRL(Math.abs(tx.amountCents))} ·{" "}
+                          {tx.description.slice(0, 26)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {payBankTxId && (
+                  <div className="rounded-lg border border-[#dce2e6] bg-[#f2f6f7] px-3 py-2 text-[11px] text-[#173d4a]">
+                    Conciliado ao extrato Open Finance: o saldo bancário já contempla esta saída e não será
+                    debitado em duplicidade.
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 text-xs text-[#0c1928]">
+                  <input
+                    type="checkbox"
+                    checked={payQuits}
+                    onChange={(e) => setPayQuits(e.target.checked)}
+                    className="size-4 accent-[#173d4a]"
+                  />
+                  <span>Quitar integralmente esta obrigação (desmarque para pagamento parcial)</span>
                 </label>
-                <select
-                  value={payAccountId}
-                  onChange={(e) => setPayAccountId(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-sm"
-                >
-                  <option value="">Conta de origem não informada</option>
-                  {state.banks.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.institution} · {b.name} (Saldo: {formatBRL(b.balanceCents)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <label className="flex items-center gap-2 text-xs text-[#0c1928]">
-                <input
-                  type="checkbox"
-                  checked={payQuits}
-                  onChange={(e) => setPayQuits(e.target.checked)}
-                  className="size-4 accent-[#173d4a]"
-                />
-                <span>Quitar integralmente esta obrigação (desativa saldo remanescente)</span>
-              </label>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-[#52616a]">Observação</label>
-                <input
-                  value={payNote}
-                  onChange={(e) => setPayNote(e.target.value)}
-                  placeholder="Gerada automaticamente se vazio"
-                  className="h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPayTarget(null);
-                    setPayInstallmentTarget(null);
-                  }}
-                  className="h-9 rounded-lg border border-[#dce2e6] px-4 text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 rounded-lg bg-[#173d4a] px-4 text-xs font-semibold text-white"
-                >
-                  Confirmar pagamento
-                </button>
-              </div>
-            </form>
+
+                {payInstallmentTarget && (
+                  <label className="flex items-center gap-2 text-xs text-[#0c1928]">
+                    <input
+                      type="checkbox"
+                      checked={payEarlyPayoff}
+                      onChange={(e) => setPayEarlyPayoff(e.target.checked)}
+                      className="size-4 accent-[#173d4a]"
+                    />
+                    <span>Registrar como quitação antecipada</span>
+                  </label>
+                )}
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Observação</label>
+                  <input
+                    value={payNote}
+                    onChange={(e) => setPayNote(e.target.value)}
+                    placeholder="Gerada automaticamente se vazio"
+                    className="h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-[#cbd3d8] bg-[#f7f8fa] px-3 py-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 text-[#52616a]">
+                    <Paperclip className="size-3.5 text-[#173d4a]" />
+                    {payAttachments.length > 0
+                      ? `${payAttachments.length} comprovante(s) anexado(s)`
+                      : "Anexar comprovante (opcional)"}
+                  </span>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#dce2e6] bg-white px-2.5 py-1 font-semibold text-[#173d4a] hover:bg-[#edf1f3]">
+                    {uploadingPayAtt ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
+                    {uploadingPayAtt ? "Enviando..." : "Selecionar arquivo"}
+                    <input
+                      type="file"
+                      multiple
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={handlePayAttachmentUpload}
+                      disabled={uploadingPayAtt}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={submittingPay}
+                    onClick={() => {
+                      setPayTarget(null);
+                      setPayInstallmentTarget(null);
+                    }}
+                    className="h-9 rounded-lg border border-[#dce2e6] px-4 text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingPay || uploadingPayAtt}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#173d4a] px-4 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    {submittingPay && <Loader2 className="size-3.5 animate-spin" />}
+                    {submittingPay ? "Salvando..." : "Confirmar pagamento"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal: Edit Annual Cell */}
-      {cellEdit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c1928]/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-[#0c1928]">
-              {cellEdit.row.creditor} — {MONTHS[Number(cellEdit.monthKey) - 1]}/{cellEdit.row.year}
-            </h3>
-            {(() => {
-              const linkedBills =
-                billsByAnnualAndPeriod.get(
-                  `${cellEdit.row.id}:${cellEdit.row.year}-${cellEdit.monthKey}`,
-                ) ?? [];
-              if (linkedBills.length === 0) return null;
-              return (
-                <div className="mt-3 space-y-1.5 rounded-lg border border-[#dce2e6] bg-[#f7f8fa] p-3 text-xs">
-                  <div className="font-semibold text-[#0c1928]">
-                    Fatura / Conta Mensal Vinculada ({linkedBills.length})
-                  </div>
-                  {linkedBills.map((lb) => (
-                    <div key={lb.id} className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[#52616a]">
-                        {lb.description || lb.creditor} ·{" "}
-                        {lb.isSettled
-                          ? `Pago ${formatBRL(lb.paidCents)} em ${formatDateBR(lb.paidDate)} (${
-                              lb.accountId
-                                ? (bankNameById.get(lb.accountId) ?? lb.accountId)
-                                : "Conta de origem não informada"
-                            })`
-                          : `Em aberto · Vence ${formatDateBR(lb.dueDate)}`}
-                      </span>
-                      <span className="tabular-nums font-semibold text-[#0c1928]">
-                        {formatBRL(lb.expectedCents)}
-                      </span>
+      {cellEdit && (() => {
+        const linkedBills =
+          billsByAnnualAndPeriod.get(
+            `${cellEdit.row.id}:${cellEdit.row.year}-${cellEdit.monthKey}`,
+          ) ?? [];
+        const existingHistoryRow = paymentHistoryRows.find(
+          (r) =>
+            (r.rawRefs.annualRowId === cellEdit.row.id &&
+              r.rawRefs.period === `${cellEdit.row.year}-${cellEdit.monthKey}`) ||
+            (linkedBills[0] && r.rawRefs.billId === linkedBills[0].id),
+        );
+        return (
+          <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-[#0c1928]/60 p-4">
+            <div className="flex max-h-[92vh] w-full max-w-md flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+              <div className="border-b border-[#edf1f3] px-6 py-4">
+                <h3 className="text-lg font-semibold text-[#0c1928]">
+                  {cellEdit.row.creditor} — {MONTHS[Number(cellEdit.monthKey) - 1]}/{cellEdit.row.year}
+                </h3>
+              </div>
+              <form onSubmit={saveCellEdit} className="flex-1 space-y-3 overflow-y-auto p-6">
+                {linkedBills.length > 0 && (
+                  <div className="space-y-1.5 rounded-lg border border-[#dce2e6] bg-[#f7f8fa] p-3 text-xs">
+                    <div className="font-semibold text-[#0c1928]">
+                      Fatura / Conta Mensal Vinculada ({linkedBills.length})
                     </div>
-                  ))}
+                    {linkedBills.map((lb) => (
+                      <div key={lb.id} className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[#52616a]">
+                          {lb.description || lb.creditor} ·{" "}
+                          {lb.isSettled
+                            ? `Pago ${formatBRL(lb.paidCents)} em ${formatDateBR(lb.paidDate)}${
+                                lb.accountId
+                                  ? ` (${bankNameById.get(lb.accountId) ?? lb.accountId})`
+                                  : ""
+                              }`
+                            : `Em aberto · Vence ${formatDateBR(lb.dueDate)}`}
+                        </span>
+                        <span className="tabular-nums font-semibold text-[#0c1928]">
+                          {formatBRL(lb.expectedCents)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">Valor previsto (R$)</label>
+                    <input
+                      value={cellExpected}
+                      onChange={(e) => setCellExpected(e.target.value)}
+                      className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">Valor pago (R$)</label>
+                    <input
+                      value={cellPaid}
+                      onChange={(e) => setCellPaid(e.target.value)}
+                      className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                    />
+                  </div>
                 </div>
-              );
-            })()}
-            <form onSubmit={saveCellEdit} className="mt-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">Data pagamento</label>
+                    <input
+                      type="date"
+                      value={cellDate}
+                      onChange={(e) => setCellDate(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] px-2.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">Conta de origem</label>
+                    <select
+                      value={cellAccountId}
+                      onChange={(e) => setCellAccountId(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2 text-xs"
+                    >
+                      <option value="">Sem vínculo bancário</option>
+                      {state.banks.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.institution} · {b.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {cellSettled && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Conciliar com Open Finance
+                    </label>
+                    <select
+                      value={cellBankTxId}
+                      onChange={(e) => setCellBankTxId(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-xs"
+                    >
+                      <option value="">Lançamento manual</option>
+                      {openFinanceCellMatches.map((tx) => (
+                        <option key={tx.id} value={tx.id}>
+                          {formatDateBR(tx.date)} · {formatBRL(Math.abs(tx.amountCents))} ·{" "}
+                          {tx.description.slice(0, 26)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Valor previsto (R$)</label>
+                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Observação</label>
                   <input
-                    value={cellExpected}
-                    onChange={(e) => setCellExpected(e.target.value)}
-                    className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
-                    required
+                    value={cellNote}
+                    onChange={(e) => setCellNote(e.target.value)}
+                    placeholder="Detalhes do pagamento ou competência"
+                    className="h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
                   />
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Valor pago (R$)</label>
+
+                <label className="flex items-center gap-2 text-xs text-[#0c1928]">
                   <input
-                    value={cellPaid}
-                    onChange={(e) => setCellPaid(e.target.value)}
-                    className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                    type="checkbox"
+                    checked={cellSettled}
+                    onChange={(e) => setCellSettled(e.target.checked)}
+                    className="size-4 accent-[#173d4a]"
                   />
+                  <span>Marcar mês como pago / quitado</span>
+                </label>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                  {existingHistoryRow ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCellEdit(null);
+                        setSettledEditRow(existingHistoryRow);
+                      }}
+                      className="h-9 rounded-lg border border-[#173d4a]/40 px-3 text-xs font-semibold text-[#173d4a] hover:bg-[#edf1f3]"
+                    >
+                      Auditar / Estornar
+                    </button>
+                  ) : (
+                    <span />
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={savingCell}
+                      onClick={() => setCellEdit(null)}
+                      className="h-9 rounded-lg border border-[#dce2e6] px-4 text-xs font-semibold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingCell}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#173d4a] px-4 text-xs font-semibold text-white disabled:opacity-60"
+                    >
+                      {savingCell && <Loader2 className="size-3.5 animate-spin" />}
+                      {savingCell ? "Salvando..." : "Salvar célula"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-[#52616a]">Data pagamento</label>
-                <input
-                  type="date"
-                  value={cellDate}
-                  onChange={(e) => setCellDate(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-[#cbd3d8] px-2.5 text-sm"
-                />
-              </div>
-              <label className="flex items-center gap-2 text-xs text-[#0c1928]">
-                <input
-                  type="checkbox"
-                  checked={cellSettled}
-                  onChange={(e) => setCellSettled(e.target.checked)}
-                  className="size-4 accent-[#173d4a]"
-                />
-                <span>Marcar mês como pago / quitado</span>
-              </label>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setCellEdit(null)}
-                  className="h-9 rounded-lg border border-[#dce2e6] px-4 text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 rounded-lg bg-[#173d4a] px-4 text-xs font-semibold text-white"
-                >
-                  Salvar célula
-                </button>
-              </div>
-            </form>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal: Add Monthly Ad-hoc Bill */}
       {billOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c1928]/60 p-4">
+        <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-[#0c1928]/60 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-[#0c1928]">Nova Conta Avulsa</h3>
             <form onSubmit={handleAddBill} className="mt-4 space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-[#52616a]">Credor / Descrição</label>
+                <label className="mb-1 block text-xs font-medium text-[#52616a]">Credor</label>
                 <input
                   value={billCreditor}
                   onChange={(e) => setBillCreditor(e.target.value)}
                   className="h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
                   required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                  Descrição / Competência (opcional)
+                </label>
+                <input
+                  value={billDescription}
+                  onChange={(e) => setBillDescription(e.target.value)}
+                  placeholder="Ex.: Fatura Nov/2026 ou Manutenção"
+                  className="h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -1065,6 +1390,37 @@ export function DespesasPage() {
                   ))}
                 </select>
               </div>
+              <label className="flex items-center gap-2 text-xs text-[#0c1928]">
+                <input
+                  type="checkbox"
+                  checked={billIsCardInvoice}
+                  onChange={(e) => setBillIsCardInvoice(e.target.checked)}
+                  className="size-4 accent-[#173d4a]"
+                />
+                <span>Esta conta é fatura consolidada de cartão de crédito</span>
+              </label>
+              {billIsCardInvoice && (
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                    Cartão vinculado (opcional)
+                  </label>
+                  <select
+                    value={billCardId}
+                    onChange={(e) => setBillCardId(e.target.value)}
+                    className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-xs"
+                  >
+                    <option value="">Selecionar cartão</option>
+                    {state.cards.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.institution} · {c.name} (final {c.number})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-[11px] text-[#52616a]">
+                    Lançar a fatura cria a obrigação consolidada; o saldo bancário só é debitado ao registrar o pagamento da fatura.
+                  </p>
+                </div>
+              )}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"

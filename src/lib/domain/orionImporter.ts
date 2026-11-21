@@ -19,6 +19,18 @@ import type {
   RevenueEventSnapshot,
   RevenueSource,
 } from "@/types/orion";
+import {
+  buildArchiveFolderPath,
+  classifyArchiveCategory,
+  extractAccessKey,
+  normalizeProduct,
+  type FiscalDocType,
+  type FiscalReceipt,
+  type ReceiptItem,
+  type ReceiptKind,
+  type ReceiptProcessingStatus,
+  type ReceiptSourceOrigin,
+} from "@/lib/receiptAnalysis";
 
 export type OrionExportRecord = {
   id: string;
@@ -52,7 +64,8 @@ export type ImportModuleKey =
   | "revenue_contracts"
   | "revenue_entries"
   | "revenue_events"
-  | "finance_card_month_snapshots";
+  | "finance_card_month_snapshots"
+  | "fiscal_receipts";
 
 export type ImportConflictStrategy = "keep_existing" | "overwrite_with_json";
 
@@ -112,7 +125,8 @@ export type PlannedDocWrite<T extends { id: string }> = {
     | "monthlyBills"
     | "revenueEntries"
     | "revenueEvents"
-    | "cardMonthSnapshots";
+    | "cardMonthSnapshots"
+    | "fiscalReceipts";
   action: "insert" | "conflict";
   phase: 1 | 2;
   sourceId: string;
@@ -167,6 +181,7 @@ const MODULE_META: Array<{ module: ImportModuleKey; label: string; phase: 1 | 2 
   { module: "revenue_entries", label: "Recebíveis", phase: 2 },
   { module: "revenue_events", label: "Eventos / Correções de Receita", phase: 2 },
   { module: "finance_card_month_snapshots", label: "Retratos Mensais de Cartão", phase: 2 },
+  { module: "fiscal_receipts", label: "Notas Fiscais & Garantias", phase: 2 },
 ];
 
 const KNOWN_MODULES = new Set<string>(MODULE_META.map((m) => m.module));
@@ -513,6 +528,12 @@ export function buildImportPreview(
     const year = asInt(rec.data["year"], 2026);
     const targetId = deterministicDocId(String(year));
     idMap[rec.id] = targetId;
+    const totalExpenseCentsRaw = rec.data["totalExpenseCents"] ?? rec.data["total_expense_cents"];
+    const categoryTotalsRaw = rec.data["categoryTotalsCents"] ?? rec.data["category_totals_cents"];
+    const monthlyCategoryRaw =
+      rec.data["monthlyCategoryCents"] ?? rec.data["monthly_category_cents"];
+    const snapshotUpdatedRaw = rec.data["snapshotUpdatedAt"] ?? rec.data["snapshot_updated_at"];
+
     const incoming: AnnualYearRecord = {
       id: targetId,
       year,
@@ -520,6 +541,18 @@ export function buildImportPreview(
         ? { sourceName: asStr(rec.data["source_name"], 140) }
         : {}),
       archivedAt: asNullableStr(rec.data["archived_at"], 40),
+      ...(typeof totalExpenseCentsRaw === "number" && totalExpenseCentsRaw >= 0
+        ? { totalExpenseCents: Math.trunc(totalExpenseCentsRaw) }
+        : {}),
+      ...(categoryTotalsRaw && typeof categoryTotalsRaw === "object" && !Array.isArray(categoryTotalsRaw)
+        ? { categoryTotalsCents: categoryTotalsRaw as Record<string, number> }
+        : {}),
+      ...(monthlyCategoryRaw && typeof monthlyCategoryRaw === "object" && !Array.isArray(monthlyCategoryRaw)
+        ? { monthlyCategoryCents: monthlyCategoryRaw as Record<string, Record<string, number>> }
+        : {}),
+      ...(asNullableStr(snapshotUpdatedRaw, 40)
+        ? { snapshotUpdatedAt: asStr(snapshotUpdatedRaw, 40) }
+        : {}),
       sourceRecordId: rec.id,
     };
     const existing = findExistingByIdOrSource(currentState.annualYears, targetId, rec.id);
@@ -1630,6 +1663,201 @@ export function buildImportPreview(
           doc: { ...incoming, id: existing.id },
           changedFields: changed,
           label: `${accountName ?? `Conta ${rawAccountId.slice(0, 8)}…`} (${period})`,
+        });
+      }
+    }
+  }
+
+  // --- PHASE 2.7: fiscal_receipts -> fiscalReceipts ---
+  for (const rec of parsed.byModule["fiscal_receipts"] ?? []) {
+    const targetId = deterministicDocId(rec.id);
+    idMap[rec.id] = targetId;
+
+    const rawKind = asStr(rec.data["kind"], 20);
+    const kind: ReceiptKind =
+      rawKind === "mercado" || rawKind === "aquisicoes" ? rawKind : "geral";
+    const rawDocType = asStr(rec.data["doc_type"] ?? rec.data["docType"], 20);
+    const docType: FiscalDocType =
+      rawDocType === "nfe_55" || rawDocType === "nfse" || rawDocType === "recibo"
+        ? rawDocType
+        : "nfce_65";
+
+    const rawItems = Array.isArray(rec.data["items"]) ? rec.data["items"] : [];
+    const items: ReceiptItem[] = rawItems.slice(0, 150).map((rawItem) => {
+      const o = rawItem && typeof rawItem === "object" ? (rawItem as Record<string, unknown>) : {};
+      const desc = asStr(o["description"], 250) || "Item";
+      const norm = normalizeProduct(
+        asStr(o["normalizedName"] ?? o["normalized_name"], 250) || desc,
+        asNullableStr(o["ean"], 20) ?? undefined,
+      );
+      const qty =
+        typeof o["quantity"] === "number" && Number.isFinite(o["quantity"]) && o["quantity"] > 0
+          ? o["quantity"]
+          : 1;
+      const unitPriceCents = Math.max(
+        0,
+        asInt(o["unitPriceCents"] ?? o["unit_price_cents"], 0),
+      );
+      const discountCents = Math.max(0, asInt(o["discountCents"] ?? o["discount_cents"], 0));
+      const totalCents = Math.max(
+        0,
+        asInt(o["totalCents"] ?? o["total_cents"], Math.round(qty * unitPriceCents)),
+      );
+      return {
+        ...(asNullableStr(o["code"], 40) ? { code: asStr(o["code"], 40) } : {}),
+        ...(asNullableStr(o["ean"], 20) ? { ean: asStr(o["ean"], 20) } : {}),
+        originalDescription: asStr(o["originalDescription"] ?? desc, 250),
+        description: desc,
+        normalizedName: norm.normalizedName,
+        normalizedKey: norm.normalizedKey,
+        ...(norm.brand ? { brand: norm.brand } : {}),
+        ...(norm.packSize ? { packSize: norm.packSize } : {}),
+        quantity: qty,
+        unit: asStr(o["unit"], 12) || "un",
+        unitPriceCents,
+        ...(discountCents > 0 ? { discountCents } : {}),
+        totalCents,
+      };
+    });
+
+    const store = asStr(rec.data["store"], 160) || "Estabelecimento";
+    const issuedAt = asIsoDate(rec.data["issued_at"] ?? rec.data["issuedAt"], "2026-01-01");
+    const accessKey = extractAccessKey(
+      asStr(rec.data["access_key"] ?? rec.data["accessKey"], 60),
+    );
+    const fileHash = asNullableStr(rec.data["file_hash"] ?? rec.data["fileHash"], 80) ?? undefined;
+    const totalCents = Math.max(
+      0,
+      asInt(rec.data["total_cents"] ?? rec.data["totalCents"], 0),
+    );
+    const archiveCategory =
+      asNullableStr(rec.data["archive_category"] ?? rec.data["archiveCategory"], 60) ??
+      classifyArchiveCategory(store, kind, items);
+
+    const rawStatus = asStr(rec.data["processing_status"] ?? rec.data["processingStatus"], 20);
+    const processingStatus: ReceiptProcessingStatus =
+      rawStatus === "partial" || rawStatus === "pending" || rawStatus === "error"
+        ? rawStatus
+        : "complete";
+    const rawOrigin = asStr(rec.data["source_origin"] ?? rec.data["sourceOrigin"], 20);
+    const sourceOrigin: ReceiptSourceOrigin =
+      rawOrigin === "qr" ||
+      rawOrigin === "url" ||
+      rawOrigin === "xml" ||
+      rawOrigin === "ocr" ||
+      rawOrigin === "manual"
+        ? rawOrigin
+        : "import";
+
+    const incoming: FiscalReceipt = {
+      id: targetId,
+      kind,
+      docType,
+      ...(asNullableStr(rec.data["uf"], 4) ? { uf: asStr(rec.data["uf"], 4) } : {}),
+      store,
+      cnpj: asStr(rec.data["cnpj"], 30),
+      ...(asNullableStr(rec.data["emitter_address"] ?? rec.data["emitterAddress"], 220)
+        ? { emitterAddress: asStr(rec.data["emitter_address"] ?? rec.data["emitterAddress"], 220) }
+        : {}),
+      issuedAt,
+      ...(asNullableStr(rec.data["issued_time"] ?? rec.data["issuedTime"], 10)
+        ? { issuedTime: asStr(rec.data["issued_time"] ?? rec.data["issuedTime"], 10) }
+        : {}),
+      accessKey,
+      number: asStr(rec.data["number"], 30),
+      series: asStr(rec.data["series"], 20),
+      paymentMethod: asStr(rec.data["payment_method"] ?? rec.data["paymentMethod"], 80),
+      ...(asInt(rec.data["discount_cents"] ?? rec.data["discountCents"], 0) > 0
+        ? { discountCents: asInt(rec.data["discount_cents"] ?? rec.data["discountCents"], 0) }
+        : {}),
+      totalCents,
+      items,
+      archiveCategory,
+      folderPath:
+        asNullableStr(rec.data["folder_path"] ?? rec.data["folderPath"], 120) ??
+        buildArchiveFolderPath(issuedAt, archiveCategory),
+      ...(asNullableStr(rec.data["storage_path"] ?? rec.data["storagePath"], 400)
+        ? { storagePath: asStr(rec.data["storage_path"] ?? rec.data["storagePath"], 400) }
+        : {}),
+      ...(asNullableStr(rec.data["file_name"] ?? rec.data["fileName"], 160)
+        ? { fileName: asStr(rec.data["file_name"] ?? rec.data["fileName"], 160) }
+        : {}),
+      ...(asNullableStr(rec.data["file_mime_type"] ?? rec.data["fileMimeType"], 80)
+        ? { fileMimeType: asStr(rec.data["file_mime_type"] ?? rec.data["fileMimeType"], 80) }
+        : {}),
+      ...(fileHash ? { fileHash } : {}),
+      ...(asNullableStr(rec.data["document_url"] ?? rec.data["documentUrl"], 1000)
+        ? { documentUrl: asStr(rec.data["document_url"] ?? rec.data["documentUrl"], 1000) }
+        : {}),
+      ...(asNullableStr(rec.data["source_url"] ?? rec.data["sourceUrl"], 1000)
+        ? { sourceUrl: asStr(rec.data["source_url"] ?? rec.data["sourceUrl"], 1000) }
+        : {}),
+      ...(asNullableStr(rec.data["linked_transaction_id"] ?? rec.data["linkedTransactionId"], 128)
+        ? {
+            linkedTransactionId: asStr(
+              rec.data["linked_transaction_id"] ?? rec.data["linkedTransactionId"],
+              128,
+            ),
+          }
+        : {}),
+      processingStatus,
+      sourceOrigin,
+      sourceRecordId: rec.id,
+    };
+
+    const st = statsMap.get("fiscal_receipts")!;
+    st.totalExpectedCents += totalCents;
+
+    const existing = currentState.fiscalReceipts.find(
+      (n) =>
+        n.id === targetId ||
+        n.sourceRecordId === rec.id ||
+        (accessKey && n.accessKey === accessKey) ||
+        (fileHash && n.fileHash === fileHash),
+    );
+
+    if (!existing) {
+      st.inserts++;
+      writes.push({
+        module: "fiscal_receipts",
+        collectionName: "fiscalReceipts",
+        action: "insert",
+        phase: 2,
+        sourceId: rec.id,
+        doc: incoming,
+        label: `${store} (${issuedAt})`,
+      });
+    } else {
+      const changed = diffComparableFields(
+        existing as unknown as Record<string, unknown>,
+        incoming as unknown as Record<string, unknown>,
+        ["store", "issuedAt", "totalCents", "accessKey", "kind"],
+      );
+      const itemSig = (list: ReceiptItem[]) =>
+        list.map((it) => `${it.description}|${it.quantity}|${it.totalCents}`);
+      if (JSON.stringify(itemSig(existing.items ?? [])) !== JSON.stringify(itemSig(incoming.items))) {
+        changed.push("items");
+      }
+      if (changed.length === 0) {
+        st.alreadyExists++;
+      } else {
+        st.conflicts++;
+        conflicts.push({
+          module: "fiscal_receipts",
+          sourceId: rec.id,
+          targetId: existing.id,
+          label: `${store} (${issuedAt})`,
+          changedFields: changed,
+        });
+        writes.push({
+          module: "fiscal_receipts",
+          collectionName: "fiscalReceipts",
+          action: "conflict",
+          phase: 2,
+          sourceId: rec.id,
+          doc: { ...incoming, id: existing.id },
+          changedFields: changed,
+          label: `${store} (${issuedAt})`,
         });
       }
     }

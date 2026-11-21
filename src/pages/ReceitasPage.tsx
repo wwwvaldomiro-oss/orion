@@ -1,18 +1,42 @@
-import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy, Download, FileText, Plus, QrCode } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  Copy,
+  Download,
+  FileText,
+  Loader2,
+  Paperclip,
+  Pencil,
+  Plus,
+  QrCode,
+  Upload,
+} from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
+import { FinancialHistorySection } from "@/components/finance/FinancialHistorySection";
+import { HistoryCorrectionModal } from "@/components/finance/HistoryCorrectionModal";
 import { useOrion } from "@/store/orionContext";
 import { formatBRL, formatDateBR, parseBRL, todayBR } from "@/lib/domain/money";
 import {
   CONTRACT_STATUSES,
   REVENUE_CATEGORIES,
+  amountDue,
   derivedContractStatus,
   installmentPlan,
   type MonthlyCorrectionIndex,
 } from "@/lib/domain/contracts";
 import { buildContractQuote, downloadBlob, generateInvoicePdf } from "@/lib/domain/invoice";
-import type { CorrectionIndex, RevenueContract, RevenueEntry } from "@/types/orion";
+import {
+  buildReceiptHistoryRows,
+  suggestOpenFinanceMatches,
+  type UnifiedHistoryRow,
+} from "@/lib/domain/ledgerHistory";
+import type {
+  CorrectionIndex,
+  PaymentAttachmentRef,
+  RevenueContract,
+  RevenueEntry,
+} from "@/types/orion";
 
 type Tab = "sources" | "annual" | "contracts" | "history";
 
@@ -25,6 +49,7 @@ export function ReceitasPage() {
     receiveRevenueEntry,
     createRevenueContract,
     updateContractStatus,
+    uploadHistoryAttachment,
   } = useOrion();
 
   const today = todayBR();
@@ -42,12 +67,22 @@ export function ReceitasPage() {
   const [srcDueDay, setSrcDueDay] = useState("10");
   const [srcRecurrence, setSrcRecurrence] = useState<"monthly" | "single">("monthly");
 
+  // Settled item adjustment modal
+  const [settledEditRow, setSettledEditRow] = useState<UnifiedHistoryRow | null>(null);
+
   // Receive entry modal
   const [receiveTarget, setReceiveTarget] = useState<RevenueEntry | null>(null);
   const [receiveAmount, setReceiveAmount] = useState("");
   const [receiveDate, setReceiveDate] = useState(today);
+  const [receiveSettled, setReceiveSettled] = useState(true);
+  const [receiveDiscount, setReceiveDiscount] = useState("0,00");
+  const [receiveSurcharge, setReceiveSurcharge] = useState("0,00");
   const [receiveNote, setReceiveNote] = useState("");
   const [receiveAccountId, setReceiveAccountId] = useState("");
+  const [receiveBankTxId, setReceiveBankTxId] = useState("");
+  const [receiveAttachments, setReceiveAttachments] = useState<PaymentAttachmentRef[]>([]);
+  const [uploadingReceiveAtt, setUploadingReceiveAtt] = useState(false);
+  const [submittingReceive, setSubmittingReceive] = useState(false);
 
   // New contract modal
   const [contractOpen, setContractOpen] = useState(false);
@@ -119,17 +154,24 @@ export function ReceitasPage() {
     return [...set].sort((a, b) => a - b);
   }, [state.annualYears, state.revenueEntries]);
 
-  const bankNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const b of state.banks) map.set(b.id, `${b.institution} · ${b.name}`);
-    return map;
-  }, [state.banks]);
+  const receiptHistoryRows = useMemo(() => buildReceiptHistoryRows(state), [state]);
 
-  const revenueEntryById = useMemo(() => {
-    const map = new Map<string, RevenueEntry>();
-    for (const e of state.revenueEntries) map.set(e.id, e);
-    return map;
-  }, [state.revenueEntries]);
+  const settledEntryIdSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of receiptHistoryRows) {
+      if (r.isSettled && r.rawRefs.entryId) set.add(r.rawRefs.entryId);
+    }
+    return set;
+  }, [receiptHistoryRows]);
+
+  const isEntryFullySettled = useCallback(
+    (e: RevenueEntry): boolean => {
+      if (!e.receivedDate) return false;
+      if (settledEntryIdSet.has(e.id)) return true;
+      return (e.receivedCents ?? 0) + (e.discountCents ?? 0) >= amountDue(e);
+    },
+    [settledEntryIdSet],
+  );
 
   const yearEntries = useMemo(
     () =>
@@ -141,15 +183,20 @@ export function ReceitasPage() {
 
   const summary = useMemo(() => {
     return yearEntries.reduce(
-      (acc, e) => ({
-        expected: acc.expected + e.expectedCents,
-        received: acc.received + (e.receivedCents ?? 0),
-        pending: acc.pending + (e.receivedDate ? 0 : e.expectedCents),
-        overdue: acc.overdue + (!e.receivedDate && e.dueDate < today ? e.expectedCents : 0),
-      }),
+      (acc, e) => {
+        const expected = amountDue(e);
+        const settled = isEntryFullySettled(e);
+        const remaining = settled ? 0 : Math.max(0, expected - (e.receivedCents ?? 0));
+        return {
+          expected: acc.expected + e.expectedCents,
+          received: acc.received + (e.receivedCents ?? 0),
+          pending: acc.pending + remaining,
+          overdue: acc.overdue + (!settled && e.dueDate < today ? remaining : 0),
+        };
+      },
       { expected: 0, received: 0, pending: 0, overdue: 0 },
     );
-  }, [yearEntries, today]);
+  }, [yearEntries, today, isEntryFullySettled]);
 
   // Group entries by source/contract for annual grid
   const annualRows = useMemo(() => {
@@ -169,40 +216,98 @@ export function ReceitasPage() {
     return [...map.entries()].map(([id, data]) => ({ id, ...data }));
   }, [yearEntries, state.revenueContracts]);
 
-  const receivedHistory = useMemo(
+  const parsedReceiveCents = parseBRL(receiveAmount) ?? 0;
+  const openFinanceReceiveMatches = useMemo(
     () =>
-      state.revenueEntries
-        .filter((e) => Boolean(e.receivedDate))
-        .sort((a, b) => (b.receivedDate ?? "").localeCompare(a.receivedDate ?? "")),
-    [state.revenueEntries],
+      suggestOpenFinanceMatches(
+        state.transactions,
+        "receipt",
+        receiveAccountId || null,
+        parsedReceiveCents,
+        receiveDate,
+      ),
+    [state.transactions, receiveAccountId, parsedReceiveCents, receiveDate],
   );
 
   function openReceiveModal(entry: RevenueEntry) {
+    if (isEntryFullySettled(entry)) {
+      const existingRow = receiptHistoryRows.find((r) => r.rawRefs.entryId === entry.id);
+      if (existingRow) {
+        setSettledEditRow(existingRow);
+        return;
+      }
+    }
+    const alreadyReceived = entry.receivedCents ?? 0;
+    const remaining = Math.max(0, amountDue(entry) - alreadyReceived);
     setReceiveTarget(entry);
-    setReceiveAmount(((entry.receivedCents ?? entry.expectedCents) / 100).toFixed(2).replace(".", ","));
-    setReceiveDate(entry.receivedDate ?? today);
-    setReceiveNote(entry.note ?? "");
+    setReceiveAmount((remaining / 100).toFixed(2).replace(".", ","));
+    setReceiveDate(today);
+    setReceiveSettled(true);
+    setReceiveDiscount("0,00");
+    setReceiveSurcharge("0,00");
+    setReceiveNote(alreadyReceived > 0 ? "" : (entry.note ?? ""));
     setReceiveAccountId(entry.accountId ?? "");
+    setReceiveBankTxId("");
+    setReceiveAttachments([]);
   }
 
-  function submitReceive(e: React.FormEvent) {
+  async function handleReceiveAttachmentUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    e.target.value = "";
+    if (!files.length || !receiveTarget) return;
+    setUploadingReceiveAtt(true);
+    try {
+      const uploaded: PaymentAttachmentRef[] = [];
+      for (const f of files) {
+        uploaded.push(await uploadHistoryAttachment(f, receiveTarget.id));
+      }
+      setReceiveAttachments((prev) => [...prev, ...uploaded]);
+      toast.success("Comprovante anexado ao recebimento.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao enviar comprovante.");
+    } finally {
+      setUploadingReceiveAtt(false);
+    }
+  }
+
+  async function submitReceive(e: React.FormEvent) {
     e.preventDefault();
-    if (!receiveTarget) return;
+    if (!receiveTarget || submittingReceive) return;
     const cents = parseBRL(receiveAmount);
-    if (!cents || cents <= 0) {
+    if (cents === null || cents < 0) {
       toast.error("Informe um valor recebido válido.");
       return;
     }
+    const discountCents = Math.max(0, parseBRL(receiveDiscount) ?? 0);
+    const surchargeCents = Math.max(0, parseBRL(receiveSurcharge) ?? 0);
     const chosenAccount = receiveAccountId.trim() ? receiveAccountId.trim() : null;
-    void receiveRevenueEntry(
-      receiveTarget.id,
-      cents,
-      receiveDate,
-      receiveNote.trim() || undefined,
-      chosenAccount,
-    );
-    setReceiveTarget(null);
-    toast.success("Recebimento confirmado e registrado no histórico.");
+    const chosenBankTx = receiveBankTxId.trim() ? receiveBankTxId.trim() : null;
+    const idempotencyKey = `rec-${receiveTarget.id}-${Date.now()}`;
+
+    setSubmittingReceive(true);
+    try {
+      await receiveRevenueEntry(
+        receiveTarget.id,
+        cents,
+        receiveDate,
+        receiveNote.trim() || undefined,
+        chosenAccount,
+        {
+          isSettled: receiveSettled,
+          discountCents,
+          surchargeCents,
+          bankTransactionId: chosenBankTx,
+          attachments: receiveAttachments,
+          idempotencyKey,
+        },
+      );
+      setReceiveTarget(null);
+      toast.success("Recebimento confirmado e registrado no histórico.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erro ao confirmar recebimento.");
+    } finally {
+      setSubmittingReceive(false);
+    }
   }
 
   function submitNewSource(e: React.FormEvent) {
@@ -346,7 +451,7 @@ export function ReceitasPage() {
     >
       <div className="space-y-6">
         {/* KPIs */}
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="no-print grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-xl border border-[#dce2e6] bg-white p-4">
             <div className="text-xs font-semibold text-[#52616a] uppercase">Previsto ({year})</div>
             <div className="tabular-nums mt-1.5 text-xl font-bold text-[#0c1928]">
@@ -374,7 +479,7 @@ export function ReceitasPage() {
         </section>
 
         {/* Sub-navigation Tabs */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="no-print flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap gap-1 rounded-lg bg-[#edf1f3] p-1">
             {(
               [
@@ -448,8 +553,12 @@ export function ReceitasPage() {
                   </thead>
                   <tbody className="divide-y divide-[#edf1f3]">
                     {yearEntries
-                      .filter((e) => !e.receivedDate)
+                      .filter((e) => !isEntryFullySettled(e))
                       .map((e) => {
+                        const expected = amountDue(e);
+                        const receivedSoFar = e.receivedCents ?? 0;
+                        const hasPartial = receivedSoFar > 0;
+                        const remaining = Math.max(0, expected - receivedSoFar);
                         const overdue = e.dueDate < today;
                         return (
                           <tr key={e.id} className="hover:bg-[#f7f8fa]">
@@ -461,12 +570,18 @@ export function ReceitasPage() {
                               {formatDateBR(e.dueDate)}
                             </td>
                             <td className="tabular-nums py-2.5 pr-3 text-right font-semibold">
-                              {formatBRL(e.expectedCents)}
+                              {formatBRL(expected)}
                             </td>
                             <td className="py-2.5 pr-3 text-xs font-semibold">
-                              <span className={overdue ? "text-[#dc2626]" : "text-[#d97706]"}>
-                                {overdue ? "Atrasada" : "A receber"}
-                              </span>
+                              {hasPartial ? (
+                                <span className="text-[#173d4a]">
+                                  Parcial · Restam {formatBRL(remaining)}
+                                </span>
+                              ) : (
+                                <span className={overdue ? "text-[#dc2626]" : "text-[#d97706]"}>
+                                  {overdue ? "Atrasada" : "A receber"}
+                                </span>
+                              )}
                             </td>
                             <td className="py-2.5 text-right">
                               <button
@@ -474,7 +589,7 @@ export function ReceitasPage() {
                                 onClick={() => openReceiveModal(e)}
                                 className="rounded-md bg-[#173d4a] px-2.5 py-1 text-xs font-semibold text-white hover:bg-[#0c1928]"
                               >
-                                Confirmar
+                                {hasPartial ? "Complementar" : "Confirmar"}
                               </button>
                             </td>
                           </tr>
@@ -513,8 +628,9 @@ export function ReceitasPage() {
                         const list = row.months[mKey] ?? [];
                         const totalCents = list.reduce((s, e) => s + e.expectedCents, 0);
                         rowSum += totalCents;
-                        const allDone = list.length > 0 && list.every((e) => Boolean(e.receivedDate));
-                        const firstOpen = list.find((e) => !e.receivedDate);
+                        const allDone = list.length > 0 && list.every((e) => isEntryFullySettled(e));
+                        const firstOpen = list.find((e) => !isEntryFullySettled(e));
+                        const hasPartialCell = list.some((e) => !isEntryFullySettled(e) && (e.receivedCents ?? 0) > 0);
                         return (
                           <td key={mKey} className="tabular-nums px-1.5 py-2 text-right">
                             {list.length === 0 ? (
@@ -523,15 +639,31 @@ export function ReceitasPage() {
                               <button
                                 type="button"
                                 onClick={() => openReceiveModal(firstOpen)}
-                                className="rounded px-1 py-0.5 font-medium text-[#d97706] hover:bg-[#fef3c7]"
+                                className={`rounded px-1 py-0.5 font-medium ${
+                                  hasPartialCell
+                                    ? "text-[#173d4a] hover:bg-[#edf1f3]"
+                                    : "text-[#d97706] hover:bg-[#fef3c7]"
+                                }`}
                                 title="Clique para confirmar recebimento"
                               >
                                 {formatBRL(totalCents)}
                               </button>
                             ) : (
-                              <span className={allDone ? "font-semibold text-[#16a34a]" : ""}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const first = list[0];
+                                  if (first) openReceiveModal(first);
+                                }}
+                                className={
+                                  allDone
+                                    ? "rounded px-1 py-0.5 font-semibold text-[#16a34a] hover:bg-[#dcfce7]"
+                                    : "rounded px-1 py-0.5"
+                                }
+                                title="Clique para ajustar ou estornar recebimento"
+                              >
                                 {formatBRL(totalCents)}
-                              </span>
+                              </button>
                             )}
                           </td>
                         );
@@ -632,7 +764,8 @@ export function ReceitasPage() {
                     </thead>
                     <tbody className="divide-y divide-[#edf1f3]">
                       {contractInstallments.map((inst) => {
-                        const paid = Boolean(inst.receivedDate);
+                        const paid = isEntryFullySettled(inst);
+                        const hasPartial = !paid && (inst.receivedCents ?? 0) > 0;
                         const overdue = !paid && inst.dueDate < today;
                         const checked = selectedInstallmentIds.includes(inst.id);
                         return (
@@ -660,23 +793,27 @@ export function ReceitasPage() {
                               {formatDateBR(inst.dueDate)}
                             </td>
                             <td className="tabular-nums py-2 pr-2 text-right font-semibold">
-                              {formatBRL(inst.receivedCents ?? inst.expectedCents)}
+                              {formatBRL(paid ? (inst.receivedCents ?? inst.expectedCents) : amountDue(inst))}
                             </td>
                             <td className="py-2 pr-2 font-semibold">
                               <span
                                 className={
                                   paid
                                     ? "text-[#16a34a]"
-                                    : overdue
-                                      ? "text-[#dc2626]"
-                                      : "text-[#d97706]"
+                                    : hasPartial
+                                      ? "text-[#173d4a]"
+                                      : overdue
+                                        ? "text-[#dc2626]"
+                                        : "text-[#d97706]"
                                 }
                               >
                                 {paid
-                                  ? `Pago ${formatDateBR(inst.receivedDate)}`
-                                  : overdue
-                                    ? "Atrasada"
-                                    : "Em aberto"}
+                                  ? `Recebido ${formatDateBR(inst.receivedDate)}`
+                                  : hasPartial
+                                    ? `Parcial · Recebido ${formatBRL(inst.receivedCents)}`
+                                    : overdue
+                                      ? "Atrasada"
+                                      : "Em aberto"}
                               </span>
                             </td>
                             <td className="py-2 text-right">
@@ -686,10 +823,20 @@ export function ReceitasPage() {
                                   onClick={() => openReceiveModal(inst)}
                                   className="rounded bg-[#173d4a] px-2 py-1 text-[11px] font-semibold text-white"
                                 >
-                                  Receber
+                                  {hasPartial ? "Complementar" : "Receber"}
                                 </button>
                               ) : (
-                                <CheckCircle2 className="ml-auto size-4 text-[#16a34a]" />
+                                <div className="inline-flex items-center gap-1.5">
+                                  <CheckCircle2 className="size-4 text-[#16a34a]" />
+                                  <button
+                                    type="button"
+                                    onClick={() => openReceiveModal(inst)}
+                                    title="Ajustar ou estornar recebimento"
+                                    className="inline-flex size-6 items-center justify-center rounded border border-[#dce2e6] bg-white text-[#173d4a] hover:bg-[#edf1f3]"
+                                  >
+                                    <Pencil className="size-3" />
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -782,171 +929,195 @@ export function ReceitasPage() {
 
         {/* Tab 4: Receipt History */}
         {tab === "history" && (
-          <div className="space-y-6">
-            <div className="rounded-xl border border-[#dce2e6] bg-white p-5">
-              <h2 className="text-base font-semibold text-[#0c1928]">
-                Histórico Imutável de Recebimentos
-              </h2>
-              <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="border-b border-[#dce2e6] text-xs text-[#52616a]">
-                      <th className="py-2 pr-3">Recebido em</th>
-                      <th className="py-2 pr-3">Descrição</th>
-                      <th className="py-2 pr-3">Conta destino</th>
-                      <th className="py-2 pr-3">Categoria</th>
-                      <th className="py-2 pr-3 text-right">Previsto</th>
-                      <th className="py-2 text-right">Recebido</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#edf1f3]">
-                    {receivedHistory.map((h) => (
-                      <tr key={h.id} className="hover:bg-[#f7f8fa]">
-                        <td className="tabular-nums py-2.5 pr-3 text-xs text-[#52616a]">
-                          {formatDateBR(h.receivedDate)}
-                        </td>
-                        <td className="py-2.5 pr-3">
-                          <div className="font-medium text-[#0c1928]">{h.title}</div>
-                          {h.note && <div className="text-xs text-[#52616a]">{h.note}</div>}
-                        </td>
-                        <td className="py-2.5 pr-3 text-xs text-[#52616a]">
-                          {h.accountId
-                            ? (bankNameById.get(h.accountId) ?? h.accountId)
-                            : "Conta não informada"}
-                        </td>
-                        <td className="py-2.5 pr-3 text-xs text-[#52616a]">{h.category}</td>
-                        <td className="tabular-nums py-2.5 pr-3 text-right text-xs text-[#52616a]">
-                          {formatBRL(h.expectedCents)}
-                        </td>
-                        <td className="tabular-nums py-2.5 text-right font-semibold text-[#16a34a]">
-                          {formatBRL(h.receivedCents)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {state.revenueEvents.length > 0 && (
-              <div className="rounded-xl border border-[#dce2e6] bg-white p-5">
-                <h2 className="text-base font-semibold text-[#0c1928]">
-                  Auditoria de Eventos de Receita ({state.revenueEvents.length})
-                </h2>
-                <p className="mt-0.5 text-xs text-[#52616a]">
-                  Trilha preservada de recebimentos e correções registrados no histórico.
-                </p>
-                <div className="mt-3 divide-y divide-[#edf1f3] text-xs">
-                  {state.revenueEvents.map((ev) => {
-                    const entry = revenueEntryById.get(ev.entryId);
-                    return (
-                      <div key={ev.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                        <div className="min-w-0">
-                          <div className="font-semibold text-[#0c1928]">
-                            {entry?.title ?? `Lançamento ${ev.entryId.slice(0, 8)}`} ·{" "}
-                            <span className="text-[#173d4a] uppercase">{ev.kind}</span>
-                          </div>
-                          <div className="text-[#52616a]">
-                            {ev.reason}
-                            {ev.afterData?.note ? ` · ${ev.afterData.note}` : ""}
-                          </div>
-                        </div>
-                        <div className="tabular-nums text-right">
-                          {ev.afterData?.receivedCents !== undefined &&
-                            ev.afterData.receivedCents !== null && (
-                              <div className="font-semibold text-[#16a34a]">
-                                {formatBRL(ev.afterData.receivedCents)}
-                              </div>
-                            )}
-                          <div className="text-[11px] text-[#7a8994]">
-                            {ev.afterData?.receivedDate
-                              ? formatDateBR(ev.afterData.receivedDate)
-                              : ev.eventCreatedAt.slice(0, 10)}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
+          <FinancialHistorySection direction="receipt" rows={receiptHistoryRows} />
         )}
       </div>
 
+      {/* Modal: Adjustment & Reversal for already settled receipts */}
+      <HistoryCorrectionModal row={settledEditRow} onClose={() => setSettledEditRow(null)} />
+
       {/* Modal: Confirm Receipt */}
-      {receiveTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0c1928]/60 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-[#0c1928]">Confirmar Recebimento</h3>
-            <p className="mt-1 text-xs text-[#52616a]">{receiveTarget.title}</p>
-            <form onSubmit={submitReceive} className="mt-4 space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Valor (R$)</label>
-                  <input
-                    value={receiveAmount}
-                    onChange={(e) => setReceiveAmount(e.target.value)}
-                    className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Data</label>
-                  <input
-                    type="date"
-                    value={receiveDate}
-                    onChange={(e) => setReceiveDate(e.target.value)}
-                    className="h-9 w-full rounded-lg border border-[#cbd3d8] px-2.5 text-sm"
-                    required
-                  />
-                </div>
+      {receiveTarget && (() => {
+        const expected = amountDue(receiveTarget);
+        const alreadyReceived = receiveTarget.receivedCents ?? 0;
+        const remaining = Math.max(0, expected - alreadyReceived);
+        return (
+          <div className="no-print fixed inset-0 z-50 flex items-center justify-center bg-[#0c1928]/60 p-4">
+            <div className="flex max-h-[92vh] w-full max-w-lg flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+              <div className="border-b border-[#edf1f3] px-6 py-4">
+                <h3 className="text-lg font-semibold text-[#0c1928]">Confirmar Recebimento</h3>
+                <p className="mt-0.5 text-xs text-[#52616a]">
+                  {receiveTarget.title} · Previsto: {formatBRL(expected)}
+                  {alreadyReceived > 0 && (
+                    <>
+                      {" "}
+                      · Já recebido: <strong className="text-[#16a34a]">{formatBRL(alreadyReceived)}</strong>{" "}
+                      · Restante: <strong className="text-[#0c1928]">{formatBRL(remaining)}</strong>
+                    </>
+                  )}
+                </p>
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-[#52616a]">
-                  Conta que recebeu o valor
+              <form onSubmit={submitReceive} className="flex-1 space-y-3 overflow-y-auto p-6">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Valor recebido agora (R$)
+                    </label>
+                    <input
+                      value={receiveAmount}
+                      onChange={(e) => setReceiveAmount(e.target.value)}
+                      className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Data do recebimento
+                    </label>
+                    <input
+                      type="date"
+                      value={receiveDate}
+                      onChange={(e) => setReceiveDate(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] px-2.5 text-sm"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">Desconto (R$)</label>
+                    <input
+                      value={receiveDiscount}
+                      onChange={(e) => setReceiveDiscount(e.target.value)}
+                      className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Acréscimo / juros (R$)
+                    </label>
+                    <input
+                      value={receiveSurcharge}
+                      onChange={(e) => setReceiveSurcharge(e.target.value)}
+                      className="tabular-nums h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Conta que recebeu o valor
+                    </label>
+                    <select
+                      value={receiveAccountId}
+                      onChange={(e) => setReceiveAccountId(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-xs"
+                    >
+                      <option value="">Sem vínculo bancário</option>
+                      {state.banks.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.institution} · {b.name} (Saldo: {formatBRL(b.balanceCents)})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-[#52616a]">
+                      Conciliar com Open Finance
+                    </label>
+                    <select
+                      value={receiveBankTxId}
+                      onChange={(e) => setReceiveBankTxId(e.target.value)}
+                      className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-xs"
+                    >
+                      <option value="">Lançamento manual (credita saldo da conta)</option>
+                      {openFinanceReceiveMatches.map((tx) => (
+                        <option key={tx.id} value={tx.id}>
+                          {formatDateBR(tx.date)} · {formatBRL(Math.abs(tx.amountCents))} ·{" "}
+                          {tx.description.slice(0, 26)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {receiveBankTxId && (
+                  <div className="rounded-lg border border-[#dce2e6] bg-[#f2f6f7] px-3 py-2 text-[11px] text-[#173d4a]">
+                    Conciliado ao extrato Open Finance: o saldo bancário já contempla esta entrada e não será
+                    creditado em duplicidade.
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 text-xs text-[#0c1928]">
+                  <input
+                    type="checkbox"
+                    checked={receiveSettled}
+                    onChange={(e) => setReceiveSettled(e.target.checked)}
+                    className="size-4 accent-[#173d4a]"
+                  />
+                  <span>Quitar integralmente este recebível (desmarque para recebimento parcial)</span>
                 </label>
-                <select
-                  value={receiveAccountId}
-                  onChange={(e) => setReceiveAccountId(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-sm"
-                >
-                  <option value="">Conta não informada</option>
-                  {state.banks.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.institution} · {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-[#52616a]">Observação</label>
-                <input
-                  value={receiveNote}
-                  onChange={(e) => setReceiveNote(e.target.value)}
-                  placeholder="Opcional"
-                  className="h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setReceiveTarget(null)}
-                  className="h-9 rounded-lg border border-[#dce2e6] px-4 text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="h-9 rounded-lg bg-[#173d4a] px-4 text-xs font-semibold text-white"
-                >
-                  Confirmar baixa
-                </button>
-              </div>
-            </form>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-[#52616a]">Observação</label>
+                  <input
+                    value={receiveNote}
+                    onChange={(e) => setReceiveNote(e.target.value)}
+                    placeholder="Opcional"
+                    className="h-9 w-full rounded-lg border border-[#cbd3d8] px-3 text-sm"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-[#cbd3d8] bg-[#f7f8fa] px-3 py-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 text-[#52616a]">
+                    <Paperclip className="size-3.5 text-[#173d4a]" />
+                    {receiveAttachments.length > 0
+                      ? `${receiveAttachments.length} comprovante(s) anexado(s)`
+                      : "Anexar comprovante (opcional)"}
+                  </span>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#dce2e6] bg-white px-2.5 py-1 font-semibold text-[#173d4a] hover:bg-[#edf1f3]">
+                    {uploadingReceiveAtt ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <Upload className="size-3" />
+                    )}
+                    {uploadingReceiveAtt ? "Enviando..." : "Selecionar arquivo"}
+                    <input
+                      type="file"
+                      multiple
+                      accept="application/pdf,image/jpeg,image/png,image/webp"
+                      onChange={handleReceiveAttachmentUpload}
+                      disabled={uploadingReceiveAtt}
+                      className="sr-only"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={submittingReceive}
+                    onClick={() => setReceiveTarget(null)}
+                    className="h-9 rounded-lg border border-[#dce2e6] px-4 text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingReceive || uploadingReceiveAtt}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#173d4a] px-4 text-xs font-semibold text-white disabled:opacity-60"
+                  >
+                    {submittingReceive && <Loader2 className="size-3.5 animate-spin" />}
+                    {submittingReceive ? "Salvando..." : "Confirmar baixa"}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modal: New Revenue Source */}
       {sourceOpen && (

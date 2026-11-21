@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   AlertTriangle,
   ChevronDown,
@@ -45,9 +46,16 @@ function formatCapturedAtBR(iso: string): string {
 
 export function CarteiraPage() {
   const { state, addBankAccount, addCreditCard } = useOrion();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedCardIdx, setSelectedCardIdx] = useState(0);
   const [txFilter, setTxFilter] = useState<"all" | "income" | "expense">("all");
+  const [txSearch, setTxSearch] = useState(() => searchParams.get("q") ?? "");
   const [expandedSnapIds, setExpandedSnapIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q !== null) setTxSearch(q);
+  }, [searchParams]);
 
   // Add account modal
   const [bankOpen, setBankOpen] = useState(false);
@@ -84,12 +92,16 @@ export function CarteiraPage() {
   }, [state.cards]);
 
   const filteredTx = useMemo(() => {
+    const q = txSearch.trim().toLowerCase();
     return state.transactions.filter((t) => {
-      if (txFilter === "income") return t.amountCents >= 0;
-      if (txFilter === "expense") return t.amountCents < 0;
-      return true;
+      if (txFilter === "income" && t.amountCents >= 0) return false;
+      if (txFilter === "expense" && t.amountCents < 0) return false;
+      if (!q) return true;
+      return `${t.description} ${t.accountName} ${t.institution} ${t.category} ${t.date}`
+        .toLowerCase()
+        .includes(q);
     });
-  }, [state.transactions, txFilter]);
+  }, [state.transactions, txFilter, txSearch]);
 
   function toggleSnapshot(id: string) {
     setExpandedSnapIds((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -323,6 +335,36 @@ export function CarteiraPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="mb-3 flex items-center gap-2">
+            <input
+              value={txSearch}
+              onChange={(e) => {
+                setTxSearch(e.target.value);
+                if (searchParams.has("q")) {
+                  searchParams.delete("q");
+                  setSearchParams(searchParams, { replace: true });
+                }
+              }}
+              placeholder="Filtrar transações por descrição, conta ou categoria..."
+              className="h-8 flex-1 rounded-lg border border-[#cbd3d8] bg-white px-2.5 text-xs"
+            />
+            {txSearch && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTxSearch("");
+                  if (searchParams.has("q")) {
+                    searchParams.delete("q");
+                    setSearchParams(searchParams, { replace: true });
+                  }
+                }}
+                className="h-8 rounded-lg border border-[#dce2e6] px-2 text-xs text-[#52616a] hover:bg-[#f0f3f5]"
+              >
+                Limpar
+              </button>
+            )}
           </div>
 
           <div className="max-h-[420px] divide-y divide-[#edf1f3] overflow-y-auto pr-1">

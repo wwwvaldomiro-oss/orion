@@ -1,3 +1,5 @@
+import type { FiscalReceipt } from "@/lib/receiptAnalysis";
+
 export type BrandLogoId = "nexo" | "apice" | "prisma" | "vortice" | "orbita";
 
 export type BankAccount = {
@@ -29,6 +31,16 @@ export type CreditCardAccount = {
   sourceRecordId?: string;
 };
 
+export type PaymentAttachmentRef = {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes?: number;
+  storagePath?: string;
+  documentUrl?: string;
+  uploadedAt: string;
+};
+
 export type WalletTransaction = {
   id: string;
   accountId: string;
@@ -39,6 +51,7 @@ export type WalletTransaction = {
   amountCents: number; // positive = income, negative = expense
   date: string; // YYYY-MM-DD
   category: string;
+  reconciledEventId?: string | null;
 };
 
 export type RevenueSource = {
@@ -68,7 +81,11 @@ export type RevenueEntry = {
   receivedCents: number | null;
   agreedCents?: number;
   adjustmentCents?: number | null;
+  discountCents?: number | null;
+  surchargeCents?: number | null;
   accountId?: string | null;
+  bankTransactionId?: string | null;
+  attachments?: PaymentAttachmentRef[];
   note?: string;
   sourceRecordId?: string;
 };
@@ -76,6 +93,11 @@ export type RevenueEntry = {
 export type RevenueEventSnapshot = {
   receivedCents?: number | null;
   receivedDate?: string | null;
+  isSettled?: boolean;
+  accountId?: string | null;
+  discountCents?: number | null;
+  surchargeCents?: number | null;
+  bankTransactionId?: string | null;
   note?: string | null;
 };
 
@@ -85,8 +107,62 @@ export type RevenueEvent = {
   kind: string;
   reason: string;
   eventCreatedAt: string;
+  accountId?: string | null;
+  bankTransactionId?: string | null;
+  targetEventId?: string | null;
+  idempotencyKey?: string;
   beforeData?: RevenueEventSnapshot | null;
   afterData?: RevenueEventSnapshot | null;
+  attachments?: PaymentAttachmentRef[];
+  sourceRecordId?: string;
+};
+
+export type PaymentEventKind =
+  | "pagamento"
+  | "parcial"
+  | "quitacao_antecipada"
+  | "correcao"
+  | "estorno";
+
+export type PaymentEventSnapshot = {
+  paidCents?: number | null;
+  paidDate?: string | null;
+  isSettled?: boolean;
+  accountId?: string | null;
+  discountCents?: number | null;
+  surchargeCents?: number | null;
+  bankTransactionId?: string | null;
+  note?: string | null;
+};
+
+export type PaymentEvent = {
+  id: string;
+  billId?: string | null;
+  installmentId?: string | null;
+  contractId?: string | null;
+  annualRowId?: string | null;
+  period?: string | null;
+  cardId?: string | null;
+  creditor: string;
+  category?: string;
+  dueDate: string; // YYYY-MM-DD or ""
+  expectedCents: number;
+  paidCents: number;
+  paidDate: string | null;
+  discountCents?: number | null;
+  surchargeCents?: number | null;
+  isSettled: boolean;
+  accountId?: string | null;
+  bankTransactionId?: string | null;
+  targetEventId?: string | null;
+  idempotencyKey?: string;
+  kind: PaymentEventKind;
+  reason: string;
+  eventCreatedAt: string;
+  beforeData?: PaymentEventSnapshot | null;
+  afterData?: PaymentEventSnapshot | null;
+  attachments?: PaymentAttachmentRef[];
+  note?: string;
   sourceRecordId?: string;
 };
 
@@ -135,6 +211,10 @@ export type AnnualYearRecord = {
   year: number;
   sourceName?: string;
   archivedAt?: string | null;
+  totalExpenseCents?: number;
+  categoryTotalsCents?: Record<string, number>;
+  monthlyCategoryCents?: Record<string, Record<string, number>>;
+  snapshotUpdatedAt?: string;
   sourceRecordId?: string;
 };
 
@@ -182,6 +262,12 @@ export type MonthlyBill = {
   installmentNumber?: number | null;
   expenseKind?: AnnualExpenseKind;
   accountId?: string | null;
+  bankTransactionId?: string | null;
+  discountCents?: number | null;
+  surchargeCents?: number | null;
+  attachments?: PaymentAttachmentRef[];
+  isCardInvoice?: boolean;
+  cardId?: string | null;
   note?: string;
   sourceRecordId?: string;
 };
@@ -208,6 +294,10 @@ export type PayableInstallment = {
   paidDate: string | null;
   note?: string | null;
   accountId?: string | null;
+  bankTransactionId?: string | null;
+  discountCents?: number | null;
+  surchargeCents?: number | null;
+  attachments?: PaymentAttachmentRef[];
   sourceRecordId?: string;
 };
 
@@ -239,6 +329,15 @@ export type CardMonthSnapshot = {
 
 export type PersonalKind = "birthday" | "work" | "appointment" | "event" | "tasks";
 
+export type AgendaRecurrence =
+  | "none"
+  | "daily"
+  | "12x36"
+  | "weekly"
+  | "monthly"
+  | "yearly"
+  | "custom";
+
 export type AgendaChecklistItem = {
   key: string;
   description: string;
@@ -251,14 +350,200 @@ export type PersonalAgendaRecord = {
   startDate: string; // YYYY-MM-DD
   time: string;
   endTime?: string;
+  breakRule?: string;
+  company?: string;
   description: string;
-  recurrence: "none" | "daily" | "12x36" | "weekly" | "monthly" | "yearly";
+  recurrence: AgendaRecurrence;
+  customDates?: string[];
   favorite: boolean;
   reminder: boolean;
+  reminderMinutesBefore?: number;
+  completed?: boolean;
+  completedAt?: string;
+  linkedNoteId?: string;
+  linkedContactId?: string;
+  color?: string;
   items: AgendaChecklistItem[];
 };
 
 export type AgendaCheckState = Record<string, boolean>; // `${recordId}:${date}:${itemKey}`
+
+export type AgendaEventSourceType =
+  | "personal"
+  | "holiday"
+  | "birthday"
+  | "bill"
+  | "annual_expense"
+  | "card_snapshot"
+  | "payable_installment"
+  | "revenue_entry"
+  | "garage_maintenance"
+  | "garage_document"
+  | "garage_reminder"
+  | "garage_fine"
+  | "trip"
+  | "note";
+
+export type AgendaEventOverride = {
+  id: string;
+  sourceType: AgendaEventSourceType;
+  sourceId: string;
+  occurrenceDate: string; // YYYY-MM-DD
+  action: "completed" | "postponed" | "hidden" | "modified";
+  postponedToDate?: string;
+  postponedToTime?: string;
+  overrideTitle?: string;
+  overrideTime?: string;
+  overrideEndTime?: string;
+  overrideBreakRule?: string;
+  overrideCompany?: string;
+  overrideDescription?: string;
+  note?: string;
+  updatedAtIso: string;
+};
+
+export type ContactCategory = {
+  id: string;
+  name: string;
+  color: string;
+  isCommercial: boolean;
+  order: number;
+};
+
+export type ContactSubcategory = {
+  id: string;
+  categoryId: string;
+  name: string;
+  color: string;
+  order: number;
+};
+
+export type ContactPhone = {
+  label: string;
+  number: string;
+  isWhatsApp?: boolean;
+};
+
+export type AgendaContact = {
+  id: string;
+  name: string;
+  nickname?: string;
+  birthDay?: number | null;
+  birthMonth?: number | null;
+  birthYear?: number | null;
+  phones: ContactPhone[];
+  emails: string[];
+  categoryId: string;
+  subcategoryId?: string;
+  categoryColor?: string;
+  subcategoryColor?: string;
+  relationship?: string;
+  company?: string;
+  profession?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  website?: string;
+  notes?: string;
+  birthdayReminderEnabled: boolean;
+  birthdayReminderDaysBefore: number;
+  notificationsEnabled: boolean;
+};
+
+export type AgendaAlarmTone = "chime" | "bell" | "pulse";
+
+export type AgendaAlarm = {
+  id: string;
+  name: string;
+  time: string; // HH:mm
+  repeatDays: number[]; // 0=Dom..6=Sab
+  soundEnabled: boolean;
+  soundTone: AgendaAlarmTone;
+  enabled: boolean;
+  snoozeUntilIso?: string | null;
+  lastTriggeredKey?: string | null;
+};
+
+export type AgendaNoteType = "free" | "checklist" | "shopping";
+
+export type AgendaChecklistEntry = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+export type ShoppingStoreProduct = {
+  id: string;
+  description: string;
+  quantity: number;
+  unit?: string;
+  unitPriceCents: number;
+  purchased: boolean;
+};
+
+export type ShoppingStoreGroup = {
+  id: string;
+  name: string;
+  address?: string;
+  note?: string;
+  items: ShoppingStoreProduct[];
+};
+
+export type AgendaNote = {
+  id: string;
+  type: AgendaNoteType;
+  title: string;
+  color: string;
+  content: string;
+  checklistItems: AgendaChecklistEntry[];
+  stores: ShoppingStoreGroup[];
+  linkedAgendaEventId?: string | null;
+  linkedDate?: string | null;
+  updatedAtIso: string;
+};
+
+export type CalculatorHistoryEntry = {
+  id: string;
+  expression: string;
+  result: string;
+  mode: "normal" | "scientific";
+  angleUnit: "DEG" | "RAD";
+  createdAtIso: string;
+};
+
+export type AgendaSettings = {
+  timeFormat: "24h" | "12h";
+  showSeconds: boolean;
+  defaultSnoozeMinutes: number;
+  leapYearBirthdayRule: "feb28" | "mar01";
+  shoppingHighlightColor: string;
+  notificationsEnabled: boolean;
+  alarmSoundDefault: boolean;
+  weatherLocationName: string;
+  weatherLat?: number | null;
+  weatherLon?: number | null;
+  themeMode: "light" | "dark";
+  hiddenDefaultCategoryIds?: string[];
+  hiddenDefaultSubcategoryIds?: string[];
+};
+
+export function createDefaultAgendaSettings(): AgendaSettings {
+  return {
+    timeFormat: "24h",
+    showSeconds: true,
+    defaultSnoozeMinutes: 5,
+    leapYearBirthdayRule: "feb28",
+    shoppingHighlightColor: "#fef08a",
+    notificationsEnabled: true,
+    alarmSoundDefault: true,
+    weatherLocationName: "",
+    weatherLat: null,
+    weatherLon: null,
+    themeMode: "light",
+    hiddenDefaultCategoryIds: [],
+    hiddenDefaultSubcategoryIds: [],
+  };
+}
 
 export type ShoppingItem = {
   id: string;
@@ -472,10 +757,19 @@ export type OrionState = {
   annualYears: AnnualYearRecord[];
   annualExpenses: AnnualExpenseRow[];
   monthlyBills: MonthlyBill[];
+  paymentEvents: PaymentEvent[];
   payableContracts: PayableContract[];
   payableInstallments: PayableInstallment[];
   personalAgenda: PersonalAgendaRecord[];
   agendaChecks: AgendaCheckState;
+  agendaOverrides: AgendaEventOverride[];
+  contactCategories: ContactCategory[];
+  contactSubcategories: ContactSubcategory[];
+  agendaContacts: AgendaContact[];
+  agendaAlarms: AgendaAlarm[];
+  agendaNotes: AgendaNote[];
+  calculatorHistory: CalculatorHistoryEntry[];
+  agendaSettings: AgendaSettings;
   shoppingList: ShoppingItem[];
   vehicles: VehicleRecord[];
   garageDrivers: GarageDriver[];
@@ -489,6 +783,7 @@ export type OrionState = {
   garageReminders: GarageReminder[];
   fuelLogs: FuelLog[];
   trips: TripPlan[];
+  fiscalReceipts: FiscalReceipt[];
   watchlistTickers: string[];
 };
 
@@ -521,10 +816,19 @@ export function createEmptyOrionState(
     annualYears: [],
     annualExpenses: [],
     monthlyBills: [],
+    paymentEvents: [],
     payableContracts: [],
     payableInstallments: [],
     personalAgenda: [],
     agendaChecks: {},
+    agendaOverrides: [],
+    contactCategories: [],
+    contactSubcategories: [],
+    agendaContacts: [],
+    agendaAlarms: [],
+    agendaNotes: [],
+    calculatorHistory: [],
+    agendaSettings: createDefaultAgendaSettings(),
     shoppingList: [],
     vehicles: [],
     garageDrivers: [],
@@ -538,6 +842,7 @@ export function createEmptyOrionState(
     garageReminders: [],
     fuelLogs: [],
     trips: [],
+    fiscalReceipts: [],
     watchlistTickers: [],
   };
 }

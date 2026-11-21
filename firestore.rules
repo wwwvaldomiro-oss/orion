@@ -137,7 +137,8 @@ service cloud.firestore {
         ])
         && data.keys().hasOnly([
           'ownerId', 'accountId', 'accountType', 'accountName', 'institution',
-          'description', 'amountCents', 'date', 'category', 'createdAt', 'updatedAt'
+          'description', 'amountCents', 'date', 'category', 'reconciledEventId',
+          'createdAt', 'updatedAt'
         ])
         && data.ownerId == userId
         && data.accountId is string && data.accountId.size() <= 128
@@ -147,7 +148,8 @@ service cloud.firestore {
         && data.description is string && data.description.size() >= 1 && data.description.size() <= 160
         && data.amountCents is int
         && data.date is string && data.date.size() == 10 && data.date.matches('^\\d{4}-\\d{2}-\\d{2}$')
-        && data.category is string && data.category.size() <= 60;
+        && data.category is string && data.category.size() <= 60
+        && (!('reconciledEventId' in data) || data.reconciledEventId == null || (data.reconciledEventId is string && data.reconciledEventId.size() <= 128));
     }
 
     function isValidRevenueSource(data, userId) {
@@ -211,7 +213,8 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'ownerId', 'sourceId', 'contractId', 'installmentNumber', 'title', 'category',
           'dueDate', 'expectedCents', 'receivedDate', 'receivedCents', 'agreedCents',
-          'adjustmentCents', 'accountId', 'note', 'sourceRecordId', 'createdAt', 'updatedAt'
+          'adjustmentCents', 'discountCents', 'surchargeCents', 'accountId',
+          'bankTransactionId', 'attachments', 'note', 'sourceRecordId', 'createdAt', 'updatedAt'
         ])
         && data.ownerId == userId
         && (!('sourceId' in data) || (data.sourceId is string && data.sourceId.size() <= 128))
@@ -225,7 +228,11 @@ service cloud.firestore {
         && (data.receivedCents == null || (data.receivedCents is int && data.receivedCents >= 0))
         && (!('agreedCents' in data) || (data.agreedCents is int && data.agreedCents >= 0))
         && (!('adjustmentCents' in data) || data.adjustmentCents == null || data.adjustmentCents is int)
+        && (!('discountCents' in data) || data.discountCents == null || (data.discountCents is int && data.discountCents >= 0))
+        && (!('surchargeCents' in data) || data.surchargeCents == null || (data.surchargeCents is int && data.surchargeCents >= 0))
         && (!('accountId' in data) || data.accountId == null || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('bankTransactionId' in data) || data.bankTransactionId == null || (data.bankTransactionId is string && data.bankTransactionId.size() <= 128))
+        && (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 20 && (data.attachments.size() == 0 || data.attachments[0] is map)))
         && (!('note' in data) || (data.note is string && data.note.size() <= 300))
         && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
     }
@@ -235,28 +242,40 @@ service cloud.firestore {
           'ownerId', 'entryId', 'kind', 'reason', 'eventCreatedAt', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'ownerId', 'entryId', 'kind', 'reason', 'eventCreatedAt', 'beforeData', 'afterData',
-          'sourceRecordId', 'createdAt', 'updatedAt'
+          'ownerId', 'entryId', 'kind', 'reason', 'eventCreatedAt',
+          'accountId', 'bankTransactionId', 'targetEventId', 'idempotencyKey',
+          'beforeData', 'afterData', 'attachments', 'sourceRecordId', 'createdAt', 'updatedAt'
         ])
         && data.ownerId == userId
         && data.entryId is string && data.entryId.size() >= 1 && data.entryId.size() <= 128
         && data.kind is string && data.kind.size() >= 1 && data.kind.size() <= 40
         && data.reason is string && data.reason.size() <= 300
         && data.eventCreatedAt is string && data.eventCreatedAt.size() <= 40
+        && (!('accountId' in data) || data.accountId == null || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('bankTransactionId' in data) || data.bankTransactionId == null || (data.bankTransactionId is string && data.bankTransactionId.size() <= 128))
+        && (!('targetEventId' in data) || data.targetEventId == null || (data.targetEventId is string && data.targetEventId.size() <= 128))
+        && (!('idempotencyKey' in data) || (data.idempotencyKey is string && data.idempotencyKey.size() <= 128))
         && (!('beforeData' in data) || data.beforeData == null || data.beforeData is map)
         && (!('afterData' in data) || data.afterData == null || data.afterData is map)
+        && (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 20 && (data.attachments.size() == 0 || data.attachments[0] is map)))
         && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
     }
 
     function isValidAnnualYearRecord(data, userId) {
       return data.keys().hasAll(['ownerId', 'year', 'createdAt', 'updatedAt'])
         && data.keys().hasOnly([
-          'ownerId', 'year', 'sourceName', 'archivedAt', 'sourceRecordId', 'createdAt', 'updatedAt'
+          'ownerId', 'year', 'sourceName', 'archivedAt',
+          'totalExpenseCents', 'categoryTotalsCents', 'monthlyCategoryCents', 'snapshotUpdatedAt',
+          'sourceRecordId', 'createdAt', 'updatedAt'
         ])
         && data.ownerId == userId
         && data.year is int && data.year >= 2000 && data.year <= 2100
         && (!('sourceName' in data) || (data.sourceName is string && data.sourceName.size() <= 140))
         && (!('archivedAt' in data) || data.archivedAt == null || (data.archivedAt is string && data.archivedAt.size() <= 40))
+        && (!('totalExpenseCents' in data) || (data.totalExpenseCents is int && data.totalExpenseCents >= 0))
+        && (!('categoryTotalsCents' in data) || data.categoryTotalsCents is map)
+        && (!('monthlyCategoryCents' in data) || data.monthlyCategoryCents is map)
+        && (!('snapshotUpdatedAt' in data) || (data.snapshotUpdatedAt is string && data.snapshotUpdatedAt.size() <= 40))
         && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
     }
 
@@ -296,8 +315,9 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'ownerId', 'period', 'creditor', 'category', 'description', 'dueDate', 'expectedCents',
           'paidDate', 'paidCents', 'isSettled', 'sourceAnnualId', 'contractId',
-          'installmentNumber', 'expenseKind', 'accountId', 'note', 'sourceRecordId',
-          'createdAt', 'updatedAt'
+          'installmentNumber', 'expenseKind', 'accountId', 'bankTransactionId',
+          'discountCents', 'surchargeCents', 'attachments', 'isCardInvoice', 'cardId',
+          'note', 'sourceRecordId', 'createdAt', 'updatedAt'
         ])
         && data.ownerId == userId
         && data.period is string && data.period.size() == 7 && data.period.matches('^\\d{4}-\\d{2}$')
@@ -314,6 +334,54 @@ service cloud.firestore {
         && (!('installmentNumber' in data) || data.installmentNumber == null || (data.installmentNumber is int && data.installmentNumber >= 0))
         && (!('expenseKind' in data) || data.expenseKind in ['consumption', 'debt'])
         && (!('accountId' in data) || data.accountId == null || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('bankTransactionId' in data) || data.bankTransactionId == null || (data.bankTransactionId is string && data.bankTransactionId.size() <= 128))
+        && (!('discountCents' in data) || data.discountCents == null || (data.discountCents is int && data.discountCents >= 0))
+        && (!('surchargeCents' in data) || data.surchargeCents == null || (data.surchargeCents is int && data.surchargeCents >= 0))
+        && (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 20 && (data.attachments.size() == 0 || data.attachments[0] is map)))
+        && (!('isCardInvoice' in data) || data.isCardInvoice is bool)
+        && (!('cardId' in data) || data.cardId == null || (data.cardId is string && data.cardId.size() <= 128))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 300))
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidPaymentEvent(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'creditor', 'dueDate', 'expectedCents', 'paidCents', 'paidDate',
+          'isSettled', 'kind', 'reason', 'eventCreatedAt', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'billId', 'installmentId', 'contractId', 'annualRowId', 'period', 'cardId',
+          'creditor', 'category', 'dueDate', 'expectedCents', 'paidCents', 'paidDate',
+          'discountCents', 'surchargeCents', 'isSettled', 'accountId', 'bankTransactionId',
+          'targetEventId', 'idempotencyKey', 'kind', 'reason', 'eventCreatedAt',
+          'beforeData', 'afterData', 'attachments', 'note', 'sourceRecordId', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && (!('billId' in data) || data.billId == null || (data.billId is string && data.billId.size() <= 128))
+        && (!('installmentId' in data) || data.installmentId == null || (data.installmentId is string && data.installmentId.size() <= 128))
+        && (!('contractId' in data) || data.contractId == null || (data.contractId is string && data.contractId.size() <= 128))
+        && (!('annualRowId' in data) || data.annualRowId == null || (data.annualRowId is string && data.annualRowId.size() <= 128))
+        && (!('period' in data) || data.period == null || (data.period is string && data.period.size() <= 7))
+        && (!('cardId' in data) || data.cardId == null || (data.cardId is string && data.cardId.size() <= 128))
+        && data.creditor is string && data.creditor.size() >= 1 && data.creditor.size() <= 140
+        && (!('category' in data) || (data.category is string && data.category.size() <= 60))
+        && data.dueDate is string && data.dueDate.size() <= 10
+        && data.expectedCents is int && data.expectedCents >= 0
+        && data.paidCents is int && data.paidCents >= 0
+        && (data.paidDate == null || (data.paidDate is string && data.paidDate.size() == 10))
+        && (!('discountCents' in data) || data.discountCents == null || (data.discountCents is int && data.discountCents >= 0))
+        && (!('surchargeCents' in data) || data.surchargeCents == null || (data.surchargeCents is int && data.surchargeCents >= 0))
+        && data.isSettled is bool
+        && (!('accountId' in data) || data.accountId == null || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('bankTransactionId' in data) || data.bankTransactionId == null || (data.bankTransactionId is string && data.bankTransactionId.size() <= 128))
+        && (!('targetEventId' in data) || data.targetEventId == null || (data.targetEventId is string && data.targetEventId.size() <= 128))
+        && (!('idempotencyKey' in data) || (data.idempotencyKey is string && data.idempotencyKey.size() <= 128))
+        && data.kind in ['pagamento', 'parcial', 'quitacao_antecipada', 'correcao', 'estorno']
+        && data.reason is string && data.reason.size() <= 300
+        && data.eventCreatedAt is string && data.eventCreatedAt.size() <= 40
+        && (!('beforeData' in data) || data.beforeData == null || data.beforeData is map)
+        && (!('afterData' in data) || data.afterData == null || data.afterData is map)
+        && (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 20 && (data.attachments.size() == 0 || data.attachments[0] is map)))
         && (!('note' in data) || (data.note is string && data.note.size() <= 300))
         && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
     }
@@ -342,6 +410,7 @@ service cloud.firestore {
         && data.keys().hasOnly([
           'ownerId', 'contractId', 'number', 'dueDate', 'expectedCents',
           'isSettled', 'paidCents', 'paidDate', 'note', 'accountId',
+          'bankTransactionId', 'discountCents', 'surchargeCents', 'attachments',
           'sourceRecordId', 'createdAt', 'updatedAt'
         ])
         && data.ownerId == userId
@@ -354,6 +423,10 @@ service cloud.firestore {
         && (data.paidDate == null || (data.paidDate is string && data.paidDate.size() == 10))
         && (!('note' in data) || data.note == null || (data.note is string && data.note.size() <= 300))
         && (!('accountId' in data) || data.accountId == null || (data.accountId is string && data.accountId.size() <= 128))
+        && (!('bankTransactionId' in data) || data.bankTransactionId == null || (data.bankTransactionId is string && data.bankTransactionId.size() <= 128))
+        && (!('discountCents' in data) || data.discountCents == null || (data.discountCents is int && data.discountCents >= 0))
+        && (!('surchargeCents' in data) || data.surchargeCents == null || (data.surchargeCents is int && data.surchargeCents >= 0))
+        && (!('attachments' in data) || (data.attachments is list && data.attachments.size() <= 20 && (data.attachments.size() == 0 || data.attachments[0] is map)))
         && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
     }
 
@@ -394,8 +467,10 @@ service cloud.firestore {
           'recurrence', 'favorite', 'reminder', 'items', 'createdAt', 'updatedAt'
         ])
         && data.keys().hasOnly([
-          'ownerId', 'kind', 'title', 'startDate', 'time', 'endTime', 'description',
-          'recurrence', 'favorite', 'reminder', 'items', 'createdAt', 'updatedAt'
+          'ownerId', 'kind', 'title', 'startDate', 'time', 'endTime', 'breakRule',
+          'company', 'description', 'recurrence', 'customDates', 'favorite', 'reminder',
+          'reminderMinutesBefore', 'completed', 'completedAt', 'linkedNoteId', 'linkedContactId',
+          'color', 'items', 'createdAt', 'updatedAt'
         ])
         && data.ownerId == userId
         && data.kind in ['birthday', 'work', 'appointment', 'event', 'tasks']
@@ -403,13 +478,187 @@ service cloud.firestore {
         && data.startDate is string && data.startDate.size() == 10 && data.startDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
         && data.time is string && data.time.size() <= 10
         && (!('endTime' in data) || (data.endTime is string && data.endTime.size() <= 10))
+        && (!('breakRule' in data) || (data.breakRule is string && data.breakRule.size() <= 120))
+        && (!('company' in data) || (data.company is string && data.company.size() <= 140))
         && data.description is string && data.description.size() <= 500
-        && data.recurrence in ['none', 'daily', '12x36', 'weekly', 'monthly', 'yearly']
+        && data.recurrence in ['none', 'daily', '12x36', 'weekly', 'monthly', 'yearly', 'custom']
+        && (!('customDates' in data) || (data.customDates is list && data.customDates.size() <= 120 && (data.customDates.size() == 0 || (data.customDates[0] is string && data.customDates[0].size() == 10))))
         && data.favorite is bool
         && data.reminder is bool
+        && (!('reminderMinutesBefore' in data) || (data.reminderMinutesBefore is int && data.reminderMinutesBefore >= 0 && data.reminderMinutesBefore <= 43200))
+        && (!('completed' in data) || data.completed is bool)
+        && (!('completedAt' in data) || (data.completedAt is string && data.completedAt.size() <= 40))
+        && (!('linkedNoteId' in data) || (data.linkedNoteId is string && data.linkedNoteId.size() <= 128))
+        && (!('linkedContactId' in data) || (data.linkedContactId is string && data.linkedContactId.size() <= 128))
+        && (!('color' in data) || (data.color is string && data.color.size() <= 20))
         && data.items is list
         && data.items.size() <= 30
         && (data.items.size() == 0 || data.items[0] is map);
+    }
+
+    function isValidAgendaOverride(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'sourceType', 'sourceId', 'occurrenceDate', 'action', 'updatedAtIso', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'sourceType', 'sourceId', 'occurrenceDate', 'action',
+          'postponedToDate', 'postponedToTime', 'overrideTitle', 'overrideTime',
+          'overrideEndTime', 'overrideBreakRule', 'overrideCompany', 'overrideDescription',
+          'note', 'updatedAtIso', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.sourceType in [
+          'personal', 'holiday', 'birthday', 'bill', 'annual_expense', 'card_snapshot',
+          'payable_installment', 'revenue_entry', 'garage_maintenance', 'garage_document',
+          'garage_reminder', 'garage_fine', 'trip', 'note'
+        ]
+        && data.sourceId is string && data.sourceId.size() >= 1 && data.sourceId.size() <= 160
+        && data.occurrenceDate is string && data.occurrenceDate.size() == 10 && data.occurrenceDate.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && data.action in ['completed', 'postponed', 'hidden', 'modified']
+        && (!('postponedToDate' in data) || (data.postponedToDate is string && data.postponedToDate.size() <= 10))
+        && (!('postponedToTime' in data) || (data.postponedToTime is string && data.postponedToTime.size() <= 10))
+        && (!('overrideTitle' in data) || (data.overrideTitle is string && data.overrideTitle.size() <= 160))
+        && (!('overrideTime' in data) || (data.overrideTime is string && data.overrideTime.size() <= 10))
+        && (!('overrideEndTime' in data) || (data.overrideEndTime is string && data.overrideEndTime.size() <= 10))
+        && (!('overrideBreakRule' in data) || (data.overrideBreakRule is string && data.overrideBreakRule.size() <= 120))
+        && (!('overrideCompany' in data) || (data.overrideCompany is string && data.overrideCompany.size() <= 140))
+        && (!('overrideDescription' in data) || (data.overrideDescription is string && data.overrideDescription.size() <= 500))
+        && (!('note' in data) || (data.note is string && data.note.size() <= 300))
+        && data.updatedAtIso is string && data.updatedAtIso.size() <= 40;
+    }
+
+    function isValidContactCategory(data, userId) {
+      return data.keys().hasAll(['ownerId', 'name', 'color', 'isCommercial', 'order', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'name', 'color', 'isCommercial', 'order', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.color is string && data.color.size() >= 4 && data.color.size() <= 20
+        && data.isCommercial is bool
+        && data.order is int && data.order >= 0 && data.order <= 1000;
+    }
+
+    function isValidContactSubcategory(data, userId) {
+      return data.keys().hasAll(['ownerId', 'categoryId', 'name', 'color', 'order', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'categoryId', 'name', 'color', 'order', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && data.categoryId is string && data.categoryId.size() >= 1 && data.categoryId.size() <= 128
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.color is string && data.color.size() >= 4 && data.color.size() <= 20
+        && data.order is int && data.order >= 0 && data.order <= 1000;
+    }
+
+    function isValidAgendaContact(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'phones', 'emails', 'categoryId',
+          'birthdayReminderEnabled', 'birthdayReminderDaysBefore', 'notificationsEnabled', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'nickname', 'birthDay', 'birthMonth', 'birthYear',
+          'phones', 'emails', 'categoryId', 'subcategoryId', 'categoryColor', 'subcategoryColor',
+          'relationship', 'company', 'profession', 'address', 'city', 'state', 'website', 'notes',
+          'birthdayReminderEnabled', 'birthdayReminderDaysBefore', 'notificationsEnabled', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 140
+        && (!('nickname' in data) || (data.nickname is string && data.nickname.size() <= 80))
+        && (!('birthDay' in data) || data.birthDay == null || (data.birthDay is int && data.birthDay >= 1 && data.birthDay <= 31))
+        && (!('birthMonth' in data) || data.birthMonth == null || (data.birthMonth is int && data.birthMonth >= 1 && data.birthMonth <= 12))
+        && (!('birthYear' in data) || data.birthYear == null || (data.birthYear is int && data.birthYear >= 1900 && data.birthYear <= 2100))
+        && data.phones is list && data.phones.size() <= 10 && (data.phones.size() == 0 || data.phones[0] is map)
+        && data.emails is list && data.emails.size() <= 10 && (data.emails.size() == 0 || (data.emails[0] is string && data.emails[0].size() <= 160))
+        && data.categoryId is string && data.categoryId.size() >= 1 && data.categoryId.size() <= 128
+        && (!('subcategoryId' in data) || (data.subcategoryId is string && data.subcategoryId.size() <= 128))
+        && (!('categoryColor' in data) || (data.categoryColor is string && data.categoryColor.size() <= 20))
+        && (!('subcategoryColor' in data) || (data.subcategoryColor is string && data.subcategoryColor.size() <= 20))
+        && (!('relationship' in data) || (data.relationship is string && data.relationship.size() <= 80))
+        && (!('company' in data) || (data.company is string && data.company.size() <= 140))
+        && (!('profession' in data) || (data.profession is string && data.profession.size() <= 120))
+        && (!('address' in data) || (data.address is string && data.address.size() <= 220))
+        && (!('city' in data) || (data.city is string && data.city.size() <= 100))
+        && (!('state' in data) || (data.state is string && data.state.size() <= 4))
+        && (!('website' in data) || (data.website is string && data.website.size() <= 220))
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 600))
+        && data.birthdayReminderEnabled is bool
+        && data.birthdayReminderDaysBefore is int && data.birthdayReminderDaysBefore >= 0 && data.birthdayReminderDaysBefore <= 60
+        && data.notificationsEnabled is bool;
+    }
+
+    function isValidAgendaAlarm(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'time', 'repeatDays', 'soundEnabled', 'soundTone', 'enabled', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'time', 'repeatDays', 'soundEnabled', 'soundTone', 'enabled',
+          'snoozeUntilIso', 'lastTriggeredKey', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.time is string && data.time.size() == 5 && data.time.matches('^\\d{2}:\\d{2}$')
+        && data.repeatDays is list && data.repeatDays.size() <= 7 && (data.repeatDays.size() == 0 || (data.repeatDays[0] is int && data.repeatDays[0] >= 0 && data.repeatDays[0] <= 6))
+        && data.soundEnabled is bool
+        && data.soundTone in ['chime', 'bell', 'pulse']
+        && data.enabled is bool
+        && (!('snoozeUntilIso' in data) || data.snoozeUntilIso == null || (data.snoozeUntilIso is string && data.snoozeUntilIso.size() <= 40))
+        && (!('lastTriggeredKey' in data) || data.lastTriggeredKey == null || (data.lastTriggeredKey is string && data.lastTriggeredKey.size() <= 80));
+    }
+
+    function isValidAgendaNote(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'type', 'title', 'color', 'content', 'checklistItems', 'stores', 'updatedAtIso', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'type', 'title', 'color', 'content', 'checklistItems', 'stores',
+          'linkedAgendaEventId', 'linkedDate', 'updatedAtIso', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.type in ['free', 'checklist', 'shopping']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 160
+        && data.color is string && data.color.size() >= 4 && data.color.size() <= 20
+        && data.content is string && data.content.size() <= 4000
+        && data.checklistItems is list && data.checklistItems.size() <= 100 && (data.checklistItems.size() == 0 || data.checklistItems[0] is map)
+        && data.stores is list && data.stores.size() <= 30 && (data.stores.size() == 0 || data.stores[0] is map)
+        && (!('linkedAgendaEventId' in data) || data.linkedAgendaEventId == null || (data.linkedAgendaEventId is string && data.linkedAgendaEventId.size() <= 128))
+        && (!('linkedDate' in data) || data.linkedDate == null || (data.linkedDate is string && data.linkedDate.size() <= 10))
+        && data.updatedAtIso is string && data.updatedAtIso.size() <= 40;
+    }
+
+    function isValidCalculatorHistoryEntry(data, userId) {
+      return data.keys().hasAll(['ownerId', 'expression', 'result', 'mode', 'angleUnit', 'createdAtIso', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'expression', 'result', 'mode', 'angleUnit', 'createdAtIso', 'createdAt', 'updatedAt'])
+        && data.ownerId == userId
+        && data.expression is string && data.expression.size() >= 1 && data.expression.size() <= 200
+        && data.result is string && data.result.size() >= 1 && data.result.size() <= 80
+        && data.mode in ['normal', 'scientific']
+        && data.angleUnit in ['DEG', 'RAD']
+        && data.createdAtIso is string && data.createdAtIso.size() <= 40;
+    }
+
+    function isValidAgendaSettings(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'timeFormat', 'showSeconds', 'defaultSnoozeMinutes', 'leapYearBirthdayRule',
+          'shoppingHighlightColor', 'notificationsEnabled', 'alarmSoundDefault',
+          'weatherLocationName', 'themeMode', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'timeFormat', 'showSeconds', 'defaultSnoozeMinutes', 'leapYearBirthdayRule',
+          'shoppingHighlightColor', 'notificationsEnabled', 'alarmSoundDefault',
+          'weatherLocationName', 'weatherLat', 'weatherLon', 'themeMode',
+          'hiddenDefaultCategoryIds', 'hiddenDefaultSubcategoryIds', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.timeFormat in ['24h', '12h']
+        && data.showSeconds is bool
+        && data.defaultSnoozeMinutes is int && data.defaultSnoozeMinutes >= 1 && data.defaultSnoozeMinutes <= 120
+        && data.leapYearBirthdayRule in ['feb28', 'mar01']
+        && data.shoppingHighlightColor is string && data.shoppingHighlightColor.size() >= 4 && data.shoppingHighlightColor.size() <= 20
+        && data.notificationsEnabled is bool
+        && data.alarmSoundDefault is bool
+        && data.weatherLocationName is string && data.weatherLocationName.size() <= 140
+        && (!('weatherLat' in data) || data.weatherLat == null || data.weatherLat is int || data.weatherLat is float)
+        && (!('weatherLon' in data) || data.weatherLon == null || data.weatherLon is int || data.weatherLon is float)
+        && data.themeMode in ['light', 'dark']
+        && (!('hiddenDefaultCategoryIds' in data) || (data.hiddenDefaultCategoryIds is list && data.hiddenDefaultCategoryIds.size() <= 20 && (data.hiddenDefaultCategoryIds.size() == 0 || (data.hiddenDefaultCategoryIds[0] is string && data.hiddenDefaultCategoryIds[0].size() <= 128))))
+        && (!('hiddenDefaultSubcategoryIds' in data) || (data.hiddenDefaultSubcategoryIds is list && data.hiddenDefaultSubcategoryIds.size() <= 40 && (data.hiddenDefaultSubcategoryIds.size() == 0 || (data.hiddenDefaultSubcategoryIds[0] is string && data.hiddenDefaultSubcategoryIds[0].size() <= 128))));
     }
 
     function isValidAgendaCheck(data, userId) {
@@ -693,6 +942,116 @@ service cloud.firestore {
         && data.status in ['Planejada', 'Em curso', 'Concluída'];
     }
 
+    function isValidFiscalReceipt(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'kind', 'store', 'issuedAt', 'totalCents', 'items', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerId', 'kind', 'docType', 'uf', 'store', 'cnpj', 'emitterAddress',
+          'issuedAt', 'issuedTime', 'accessKey', 'number', 'series', 'paymentMethod',
+          'discountCents', 'totalCents', 'items', 'archiveCategory', 'folderPath',
+          'storagePath', 'fileName', 'fileMimeType', 'fileHash', 'documentUrl',
+          'sourceUrl', 'linkedTransactionId', 'processingStatus', 'processingError',
+          'sourceOrigin', 'lowConfidenceFields', 'warranty', 'sourceRecordId',
+          'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && (!('id' in data) || (data.id is string && data.id.size() <= 128))
+        && data.kind in ['geral', 'mercado', 'aquisicoes']
+        && (!('docType' in data) || data.docType in ['nfce_65', 'nfe_55', 'nfse', 'recibo'])
+        && (!('uf' in data) || (data.uf is string && data.uf.size() <= 4))
+        && data.store is string && data.store.size() >= 1 && data.store.size() <= 160
+        && (!('cnpj' in data) || (data.cnpj is string && data.cnpj.size() <= 30))
+        && (!('emitterAddress' in data) || (data.emitterAddress is string && data.emitterAddress.size() <= 220))
+        && data.issuedAt is string && data.issuedAt.size() == 10 && data.issuedAt.matches('^\\d{4}-\\d{2}-\\d{2}$')
+        && (!('issuedTime' in data) || (data.issuedTime is string && data.issuedTime.size() <= 10))
+        && (!('accessKey' in data) || (data.accessKey is string && data.accessKey.size() <= 60))
+        && (!('number' in data) || (data.number is string && data.number.size() <= 30))
+        && (!('series' in data) || (data.series is string && data.series.size() <= 20))
+        && (!('paymentMethod' in data) || (data.paymentMethod is string && data.paymentMethod.size() <= 80))
+        && (!('discountCents' in data) || (data.discountCents is int && data.discountCents >= 0))
+        && data.totalCents is int && data.totalCents >= 0
+        && data.items is list && data.items.size() <= 150
+        && (data.items.size() == 0 || data.items[0] is map)
+        && (!('archiveCategory' in data) || (data.archiveCategory is string && data.archiveCategory.size() <= 60))
+        && (!('folderPath' in data) || (data.folderPath is string && data.folderPath.size() <= 120))
+        && (!('storagePath' in data) || (data.storagePath is string && data.storagePath.size() <= 400))
+        && (!('fileName' in data) || (data.fileName is string && data.fileName.size() <= 160))
+        && (!('fileMimeType' in data) || (data.fileMimeType is string && data.fileMimeType.size() <= 80))
+        && (!('fileHash' in data) || (data.fileHash is string && data.fileHash.size() <= 80))
+        && (!('documentUrl' in data) || (data.documentUrl is string && data.documentUrl.size() <= 1000))
+        && (!('sourceUrl' in data) || (data.sourceUrl is string && data.sourceUrl.size() <= 1000))
+        && (!('linkedTransactionId' in data) || (data.linkedTransactionId is string && data.linkedTransactionId.size() <= 128))
+        && (!('processingStatus' in data) || data.processingStatus in ['complete', 'partial', 'pending', 'error'])
+        && (!('processingError' in data) || (data.processingError is string && data.processingError.size() <= 300))
+        && (!('sourceOrigin' in data) || data.sourceOrigin in ['manual', 'qr', 'url', 'xml', 'ocr', 'import'])
+        && (!('lowConfidenceFields' in data) || (data.lowConfidenceFields is list && data.lowConfidenceFields.size() <= 20))
+        && (!('warranty' in data) || data.warranty is map)
+        && (!('sourceRecordId' in data) || (data.sourceRecordId is string && data.sourceRecordId.size() <= 128));
+    }
+
+    function isValidLoyaltyHolder(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'name', 'relationship', 'cpfMasked', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'name', 'relationship', 'cpfMasked', 'notes', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.relationship in ['Titular', 'Cônjuge', 'Filho(a)', 'Familiar', 'Amigo', 'Outro']
+        && data.cpfMasked is string && data.cpfMasked.size() <= 20
+        && data.notes is string && data.notes.size() <= 200;
+    }
+
+    function isValidLoyaltyAccount(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'holderId', 'holderName', 'programId', 'programName', 'category',
+          'accountNumber', 'tier', 'balance', 'expiringPoints', 'expirationDate',
+          'avgCpm', 'cpfsUsed', 'cpfLimit', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'holderId', 'holderName', 'programId', 'programName', 'category',
+          'accountNumber', 'tier', 'balance', 'expiringPoints', 'expirationDate',
+          'avgCpm', 'cpfsUsed', 'cpfLimit', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.holderId)
+        && data.holderName is string && data.holderName.size() >= 1 && data.holderName.size() <= 80
+        && data.programId is string && data.programId.size() >= 1 && data.programId.size() <= 40
+        && data.programName is string && data.programName.size() >= 1 && data.programName.size() <= 60
+        && data.category in ['aerea', 'banco', 'varejo']
+        && data.accountNumber is string && data.accountNumber.size() <= 40
+        && data.tier is string && data.tier.size() <= 40
+        && data.balance is int && data.balance >= 0
+        && data.expiringPoints is int && data.expiringPoints >= 0
+        && data.expirationDate is string && data.expirationDate.size() <= 20
+        && (data.avgCpm is int || data.avgCpm is float) && data.avgCpm >= 0
+        && data.cpfsUsed is int && data.cpfsUsed >= 0 && data.cpfsUsed <= 50
+        && data.cpfLimit is int && data.cpfLimit >= 0 && data.cpfLimit <= 50;
+    }
+
+    function isValidPointTransaction(data, userId) {
+      return data.keys().hasAll([
+          'ownerId', 'accountId', 'programName', 'holderName', 'type', 'points',
+          'description', 'date', 'cpm', 'totalBrl', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId', 'accountId', 'programName', 'holderName', 'type', 'points',
+          'description', 'date', 'cpm', 'totalBrl', 'createdAt', 'updatedAt'
+        ])
+        && data.ownerId == userId
+        && isValidId(data.accountId)
+        && data.programName is string && data.programName.size() >= 1 && data.programName.size() <= 60
+        && data.holderName is string && data.holderName.size() >= 1 && data.holderName.size() <= 80
+        && data.type in ['acumulo', 'resgate', 'transferencia_entrada', 'transferencia_saida', 'venda', 'expiracao', 'ajuste']
+        && data.points is int
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 140
+        && data.date is string && data.date.size() >= 8 && data.date.size() <= 20
+        && (data.cpm is int || data.cpm is float) && data.cpm >= 0
+        && (data.totalBrl is int || data.totalBrl is float) && data.totalBrl >= 0;
+    }
+
     // --- Collection Rules ---
 
     match /users/{userId} {
@@ -713,19 +1072,28 @@ service cloud.firestore {
         );
       allow delete: if isValidId(userId) && isOwner(userId);
 
+      // Server-only encrypted Pluggy Open Finance credentials (never readable/writable from browser)
+      match /pluggySettings/{slotId} {
+        allow read, write: if false;
+      }
+
       match /fiscalReceipts/{noteId} {
         allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
-        allow list: if isOwner(userId) && parentWorkspaceOwned(userId) && resource.data.ownerId == request.auth.uid;
+        allow list: if isOwner(userId) && parentWorkspaceOwned(userId) && existing().ownerId == request.auth.uid;
         allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
-          && incoming().ownerId == userId && hasValidTimestampsOnCreate(incoming())
-          && incoming().store is string && incoming().store.size() <= 160
-          && incoming().items is list && incoming().items.size() <= 150
-          && incoming().totalCents is int && incoming().totalCents >= 0;
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidFiscalReceipt(incoming(), userId);
         allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
-          && incoming().ownerId == existing().ownerId && hasImmutableCoreOnUpdate()
-          && incoming().store is string && incoming().store.size() <= 160
-          && incoming().items is list && incoming().items.size() <= 150
-          && incoming().totalCents is int && incoming().totalCents >= 0;
+          && hasImmutableCoreOnUpdate()
+          && isValidFiscalReceipt(incoming(), userId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'kind', 'docType', 'uf', 'store', 'cnpj', 'emitterAddress',
+            'issuedAt', 'issuedTime', 'accessKey', 'number', 'series', 'paymentMethod',
+            'discountCents', 'totalCents', 'items', 'archiveCategory', 'folderPath',
+            'storagePath', 'fileName', 'fileMimeType', 'fileHash', 'documentUrl',
+            'sourceUrl', 'linkedTransactionId', 'processingStatus', 'processingError',
+            'sourceOrigin', 'lowConfidenceFields', 'warranty', 'sourceRecordId', 'updatedAt'
+          ]);
         allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
       }
 
@@ -795,7 +1163,7 @@ service cloud.firestore {
         allow update: if isValidId(userId) && isValidId(txId) && isOwner(userId)
           && isValidWalletTransaction(incoming(), userId)
           && hasImmutableCoreOnUpdate()
-          && incoming().diff(existing()).affectedKeys().hasOnly(['description', 'amountCents', 'date', 'category', 'updatedAt'])
+          && incoming().diff(existing()).affectedKeys().hasOnly(['description', 'amountCents', 'date', 'category', 'reconciledEventId', 'updatedAt'])
           && parentWorkspaceOwned(userId);
         allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
       }
@@ -829,7 +1197,7 @@ service cloud.firestore {
           && isValidRevenueContract(incoming(), userId)
           && hasImmutableCoreOnUpdate()
           && (
-            (existing().status != 'Concluído' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['note', 'updatedAt'])
           )
           && parentWorkspaceOwned(userId);
@@ -847,11 +1215,13 @@ service cloud.firestore {
           && isValidRevenueEntry(incoming(), userId)
           && hasImmutableCoreOnUpdate()
           && (
-            incoming().diff(existing()).affectedKeys().hasOnly(['receivedCents', 'receivedDate', 'note', 'accountId', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['receivedCents', 'receivedDate', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly([
               'sourceId', 'contractId', 'installmentNumber', 'title', 'category',
               'dueDate', 'expectedCents', 'receivedDate', 'receivedCents', 'agreedCents',
-              'adjustmentCents', 'accountId', 'note', 'sourceRecordId', 'updatedAt'
+              'adjustmentCents', 'discountCents', 'surchargeCents', 'accountId',
+              'bankTransactionId', 'attachments', 'note', 'sourceRecordId', 'updatedAt'
             ])
           )
           && parentWorkspaceOwned(userId);
@@ -868,9 +1238,14 @@ service cloud.firestore {
         allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
           && isValidRevenueEvent(incoming(), userId)
           && hasImmutableCoreOnUpdate()
-          && incoming().diff(existing()).affectedKeys().hasOnly([
-            'entryId', 'kind', 'reason', 'eventCreatedAt', 'beforeData', 'afterData', 'sourceRecordId', 'updatedAt'
-          ])
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'entryId', 'kind', 'reason', 'eventCreatedAt', 'accountId', 'bankTransactionId',
+              'targetEventId', 'idempotencyKey', 'beforeData', 'afterData', 'attachments',
+              'sourceRecordId', 'updatedAt'
+            ])
+          )
           && parentWorkspaceOwned(userId);
         allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
       }
@@ -885,7 +1260,11 @@ service cloud.firestore {
         allow update: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
           && isValidAnnualYearRecord(incoming(), userId)
           && hasImmutableCoreOnUpdate()
-          && incoming().diff(existing()).affectedKeys().hasOnly(['sourceName', 'archivedAt', 'sourceRecordId', 'updatedAt'])
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'sourceName', 'archivedAt',
+            'totalExpenseCents', 'categoryTotalsCents', 'monthlyCategoryCents', 'snapshotUpdatedAt',
+            'sourceRecordId', 'updatedAt'
+          ])
           && parentWorkspaceOwned(userId);
         allow delete: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
       }
@@ -923,16 +1302,34 @@ service cloud.firestore {
           && isValidMonthlyBill(incoming(), userId)
           && hasImmutableCoreOnUpdate()
           && (
-            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'note', 'accountId', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly(['expectedCents', 'paidCents', 'paidDate', 'isSettled', 'note', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly([
               'period', 'creditor', 'category', 'description', 'dueDate', 'expectedCents',
               'paidDate', 'paidCents', 'isSettled', 'sourceAnnualId', 'contractId',
-              'installmentNumber', 'expenseKind', 'accountId', 'note', 'sourceRecordId', 'updatedAt'
+              'installmentNumber', 'expenseKind', 'accountId', 'bankTransactionId',
+              'discountCents', 'surchargeCents', 'attachments', 'isCardInvoice', 'cardId',
+              'note', 'sourceRecordId', 'updatedAt'
             ])
           )
           && parentWorkspaceOwned(userId);
         allow delete: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /paymentEvents/{eventId} {
+        allow get: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPaymentEvent(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && isValidPaymentEvent(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
       }
 
       match /payableContracts/{contractId} {
@@ -966,10 +1363,12 @@ service cloud.firestore {
           && hasImmutableCoreOnUpdate()
           && incoming().contractId == existing().contractId
           && (
-            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'note', 'accountId', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
             incoming().diff(existing()).affectedKeys().hasOnly([
               'number', 'dueDate', 'expectedCents', 'isSettled', 'paidCents',
-              'paidDate', 'note', 'accountId', 'sourceRecordId', 'updatedAt'
+              'paidDate', 'note', 'accountId', 'bankTransactionId', 'discountCents',
+              'surchargeCents', 'attachments', 'sourceRecordId', 'updatedAt'
             ])
           )
           && parentWorkspaceOwned(userId);
@@ -986,7 +1385,12 @@ service cloud.firestore {
         allow update: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
           && isValidPersonalAgenda(incoming(), userId)
           && hasImmutableCoreOnUpdate()
-          && incoming().diff(existing()).affectedKeys().hasOnly(['kind', 'title', 'startDate', 'time', 'endTime', 'description', 'recurrence', 'favorite', 'reminder', 'items', 'updatedAt'])
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'kind', 'title', 'startDate', 'time', 'endTime', 'breakRule', 'company',
+            'description', 'recurrence', 'customDates', 'favorite', 'reminder',
+            'reminderMinutesBefore', 'completed', 'completedAt', 'linkedNoteId',
+            'linkedContactId', 'color', 'items', 'updatedAt'
+          ])
           && parentWorkspaceOwned(userId);
         allow delete: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
       }
@@ -1235,6 +1639,188 @@ service cloud.firestore {
           )
           && parentWorkspaceOwned(userId);
         allow delete: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /loyaltyHolders/{holderId} {
+        allow get: if isValidId(userId) && isValidId(holderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(holderId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidLoyaltyHolder(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(holderId) && isOwner(userId)
+          && isValidLoyaltyHolder(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'relationship', 'cpfMasked', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(holderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /loyaltyAccounts/{accountId} {
+        allow get: if isValidId(userId) && isValidId(accountId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(accountId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidLoyaltyAccount(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/loyaltyHolders/$(incoming().holderId));
+        allow update: if isValidId(userId) && isValidId(accountId) && isOwner(userId)
+          && isValidLoyaltyAccount(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'expiringPoints', 'expirationDate', 'avgCpm', 'cpfsUsed', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['accountNumber', 'tier', 'cpfLimit', 'cpfsUsed', 'expiringPoints', 'expirationDate', 'avgCpm', 'balance', 'holderId', 'holderName', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(accountId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /pointTransactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPointTransaction(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/loyaltyAccounts/$(incoming().accountId));
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaOverrides/{overrideId} {
+        allow get: if isValidId(userId) && isValidId(overrideId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(overrideId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaOverride(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(overrideId) && isOwner(userId)
+          && isValidAgendaOverride(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'action', 'postponedToDate', 'postponedToTime', 'overrideTitle', 'overrideTime',
+            'overrideEndTime', 'overrideBreakRule', 'overrideCompany', 'overrideDescription',
+            'note', 'updatedAtIso', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(overrideId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /contactCategories/{categoryId} {
+        allow get: if isValidId(userId) && isValidId(categoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(categoryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidContactCategory(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(categoryId) && isOwner(userId)
+          && isValidContactCategory(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'isCommercial', 'order', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(categoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /contactSubcategories/{subcategoryId} {
+        allow get: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidContactSubcategory(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId)
+          && isValidContactSubcategory(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['categoryId', 'name', 'color', 'order', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaContacts/{contactId} {
+        allow get: if isValidId(userId) && isValidId(contactId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contactId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaContact(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contactId) && isOwner(userId)
+          && isValidAgendaContact(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'nickname', 'birthDay', 'birthMonth', 'birthYear', 'phones', 'emails',
+            'categoryId', 'subcategoryId', 'categoryColor', 'subcategoryColor', 'relationship',
+            'company', 'profession', 'address', 'city', 'state', 'website', 'notes',
+            'birthdayReminderEnabled', 'birthdayReminderDaysBefore', 'notificationsEnabled', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contactId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaAlarms/{alarmId} {
+        allow get: if isValidId(userId) && isValidId(alarmId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(alarmId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaAlarm(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(alarmId) && isOwner(userId)
+          && isValidAgendaAlarm(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'time', 'repeatDays', 'soundEnabled', 'soundTone', 'enabled',
+            'snoozeUntilIso', 'lastTriggeredKey', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(alarmId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaNotes/{noteId} {
+        allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaNote(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId)
+          && isValidAgendaNote(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'title', 'color', 'content', 'checklistItems', 'stores',
+            'linkedAgendaEventId', 'linkedDate', 'updatedAtIso', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /calculatorHistory/{entryId} {
+        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCalculatorHistoryEntry(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaSettings/{settingId} {
+        allow get: if isValidId(userId) && isValidId(settingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(settingId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaSettings(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(settingId) && isOwner(userId)
+          && isValidAgendaSettings(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'timeFormat', 'showSeconds', 'defaultSnoozeMinutes', 'leapYearBirthdayRule',
+            'shoppingHighlightColor', 'notificationsEnabled', 'alarmSoundDefault',
+            'weatherLocationName', 'weatherLat', 'weatherLon', 'themeMode',
+            'hiddenDefaultCategoryIds', 'hiddenDefaultSubcategoryIds', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(settingId) && isOwner(userId) && parentWorkspaceOwned(userId);
       }
     }
   }
