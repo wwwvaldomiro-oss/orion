@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/layout/AppShell";
 import { useOrion } from "@/store/orionContext";
 import { db } from "@/lib/firebase";
+import { additionalForecastByMonth, annualCommitmentsByMonth, annualSettlementByMonth, budgetBalance } from "@/lib/domain/budgetCalculations";
 
 type Category = { id: string; name: string; parentId: string | null };
 type BudgetRow = { id: string; title: string; categoryId: string; months: (number | null)[]; sourceAnnualId: string | null };
@@ -90,16 +91,10 @@ export function OrcamentoPage() {
     }
   };
   const annualRows = useMemo(() => state.annualExpenses.filter(r => r.year === year), [state.annualExpenses, year]);
-  const actualById = useMemo(() => new Map(annualRows.map(r => [r.id, r])), [annualRows]);
-  const obligations = useMemo(() => MONTHS.map((_, i) => annualRows.reduce((sum, row) => {
-    const cell = row.months[String(i + 1).padStart(2, "0")];
-    return sum + Math.max(0, cell?.expectedCents ?? 0);
-  }, 0)), [annualRows]);
-  const expenses = useMemo(() => MONTHS.map((_, i) => data.rows.reduce((sum, row) => {
-    const planned = row.months[i] ?? 0;
-    const linked = row.sourceAnnualId ? actualById.get(row.sourceAnnualId)?.months[String(i + 1).padStart(2, "0")]?.expectedCents ?? 0 : 0;
-    return sum + (row.sourceAnnualId ? Math.max(0, planned - linked) : planned);
-  }, 0)), [data.rows, actualById]);
+  const obligations = useMemo(() => annualCommitmentsByMonth(annualRows), [annualRows]);
+  const settlement = useMemo(() => annualSettlementByMonth(annualRows), [annualRows]);
+  const reconciliation = useMemo(() => additionalForecastByMonth(data.rows, annualRows), [data.rows, annualRows]);
+  const expenses = reconciliation.values;
   const goals = useMemo(() => MONTHS.map((_, i) => data.goals.reduce((sum, g) => sum + (g.contributions[i] || 0), 0)), [data.goals]);
   const revenue = useMemo(() => MONTHS.map((_, i) => {
     const period = `${year}-${String(i + 1).padStart(2,"0")}`;
@@ -112,7 +107,7 @@ export function OrcamentoPage() {
     return fromEntries + fromSources;
   }), [state.revenueEntries, state.revenueSources, year]);
   const total = (arr: number[]) => arr.reduce((a,b) => a+b, 0);
-  const saldo = revenue.map((v,i) => v - obligations[i] - expenses[i] - goals[i]);
+  const saldo = budgetBalance(revenue, obligations, expenses, goals);
   const fieldClass = "w-full min-w-0 rounded-lg border border-[#dce2e6] bg-white px-2.5 py-2 text-sm text-[#0c1928] dark:border-[#294359] dark:bg-[#102336] dark:text-white";
   const btn = "rounded-lg bg-[#173d4a] px-3 py-2 text-sm font-medium text-white hover:bg-[#245768] disabled:opacity-50";
   const card = "rounded-xl border border-[#dce2e6] bg-white p-4 dark:border-[#294359] dark:bg-[#102336]";
@@ -127,6 +122,12 @@ export function OrcamentoPage() {
         <div className="grid gap-3 md:grid-cols-4">
           {([["Receitas previstas",total(revenue)],["Despesas Anuais",total(obligations)],["Novas provisões",total(expenses)],["Metas e reservas",total(goals)]] as [string,number][]).map(([label,value]) => <div key={label} className={card}><p className="text-xs text-[#63717d] dark:text-slate-400">{label}</p><strong className="mt-2 block text-lg">{money(value)}</strong></div>)}
         </div>
+        {(reconciliation.invalidLinks.length > 0 || reconciliation.repeatedLinks.length > 0) && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          Atenção à conciliação: {reconciliation.invalidLinks.length} previsão(ões) com vínculo que não existe neste ano e {reconciliation.repeatedLinks.length} compromisso(s) vinculado(s) a múltiplas previsões. Revise os vínculos antes de confiar no saldo projetado.
+        </div>}
+        {saldo.some(value => value < 0) && <div role="status" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+          Há déficit previsto em {saldo.filter(value => value < 0).length} mês(es). Necessidade total de ajuste nos meses negativos: {money(saldo.reduce((sum, value) => sum + Math.max(0, -value), 0))}. O saldo anual positivo não elimina déficits mensais.
+        </div>}
         <div className={card}><p className="text-xs text-[#63717d] dark:text-slate-400">Saldo projetado do ano, após metas</p><strong className={`text-xl ${total(saldo)<0?"text-red-600":"text-emerald-700 dark:text-emerald-300"}`}>{money(total(saldo))}</strong><p className="mt-1 text-xs text-[#63717d]">Receita prevista − despesas anuais − previsões adicionais − aportes. Valores de reservas não são pagamentos realizados.</p></div>
         {tab === "annual" ? <>
           <section className={card}><h2 className="mb-3 font-semibold">Adicionar categoria ou subcategoria</h2>
@@ -175,7 +176,7 @@ export function OrcamentoPage() {
           </section>
           {data.goals.map(g => <section key={g.id} className={card}>
             <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="font-semibold">{g.title}</h3><p className="text-xs text-[#63717d]">{g.kind} · até {g.targetDate}</p></div><button aria-label="Excluir meta" onClick={()=>{if(window.confirm("Excluir esta meta?"))change(v=>({...v,goals:v.goals.filter(x=>x.id!==g.id)}));}}><Trash2 className="size-4 text-red-600"/></button></div>
-            <p className="mt-2 text-sm">Objetivo: <strong>{money(g.targetCents)}</strong> · Já reservado: {money(g.savedCents)} · Falta: {money(Math.max(0,g.targetCents-g.savedCents-total(g.contributions)))}</p>
+            <p className="mt-2 text-sm">Objetivo: <strong>{money(g.targetCents)}</strong> · Já reservado: {money(g.savedCents)} · Falta reservar: {money(Math.max(0,g.targetCents-g.savedCents))} · Aportes planejados: {money(total(g.contributions))}</p>
             <div className="my-3 h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-[#B99555]" style={{width:`${Math.min(100,100*g.savedCents/g.targetCents)}%`}}/></div>
             <p className="mb-2 text-xs text-[#63717d]">Aportes programados no ano (R$). Planejamento não comprova depósito ou investimento efetivo.</p>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-12">{MONTHS.map((m,i)=><label key={m} className="text-xs">{m}<input className={fieldClass} type="number" min="0" step=".01" value={g.contributions[i]?String(g.contributions[i]/100):""} placeholder="—" onChange={e=>change(v=>({...v,goals:v.goals.map(x=>x.id===g.id?{...x,contributions:x.contributions.map((a,j)=>j===i?fromReais(e.target.value):a)}:x)}))}/></label>)}</div>
