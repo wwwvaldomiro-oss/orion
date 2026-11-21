@@ -50,7 +50,7 @@ service cloud.firestore {
         && data.keys().hasOnly(['ownerId', 'year', 'createdAt', 'updatedAt', 'categories', 'rows', 'goals'])
         && data.ownerId == userId
         && data.year is int && data.year >= 2000 && data.year <= 2099
-        && budgetYearId == data.year.toString()
+        && budgetYearId == string(data.year)
         && data.categories is list && data.categories.size() <= 150
         && data.rows is list && data.rows.size() <= 250
         && data.goals is list && data.goals.size() <= 100
