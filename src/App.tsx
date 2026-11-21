@@ -15,6 +15,7 @@ import { VeiculosPage } from "@/pages/VeiculosPage";
 import { ViagensPage } from "@/pages/ViagensPage";
 import { PerfilPage } from "@/pages/PerfilPage";
 import { NotasFiscaisPage } from "@/pages/NotasFiscaisPage";
+import { OrcamentoPage } from "@/pages/OrcamentoPage";
 import { AgendaAlarmManager } from "@/components/agenda/AgendaAlarmManager";
 
 function AppRoutes() {
@@ -49,6 +50,7 @@ function AppRoutes() {
       <Route path="/painel" element={<PainelPage />} />
       <Route path="/receitas" element={<ReceitasPage />} />
       <Route path="/despesas" element={<DespesasPage />} />
+      <Route path="/orcamento" element={<OrcamentoPage />} />
       <Route path="/carteira" element={<CarteiraPage />} />
       <Route path="/notas-fiscais" element={<NotasFiscaisPage />} />
       <Route path="/cotacoes" element={<BolsaPage />} />
