@@ -45,6 +45,33 @@ service cloud.firestore {
         && incoming().updatedAt == request.time;
     }
 
+    function isValidBudgetYear(data, userId, budgetYearId) {
+      return data.keys().hasAll(['ownerId', 'year', 'createdAt', 'updatedAt', 'categories', 'rows', 'goals'])
+        && data.keys().hasOnly(['ownerId', 'year', 'createdAt', 'updatedAt', 'categories', 'rows', 'goals'])
+        && data.ownerId == userId
+        && data.year is int && data.year >= 2000 && data.year <= 2099
+        && budgetYearId == string(data.year)
+        && data.categories is list && data.categories.size() <= 150
+        && data.rows is list && data.rows.size() <= 250
+        && data.goals is list && data.goals.size() <= 100
+        && (data.categories.size() == 0 || (
+          data.categories[0] is map &&
+          data.categories[0].keys().hasAll(['id', 'name', 'parentId']) &&
+          data.categories[0].id is string && data.categories[0].name is string
+        ))
+        && (data.rows.size() == 0 || (
+          data.rows[0] is map &&
+          data.rows[0].keys().hasAll(['id', 'title', 'categoryId', 'months', 'sourceAnnualId']) &&
+          data.rows[0].months is list && data.rows[0].months.size() == 12
+        ))
+        && (data.goals.size() == 0 || (
+          data.goals[0] is map &&
+          data.goals[0].keys().hasAll(['id', 'title', 'kind', 'targetCents', 'savedCents', 'targetDate', 'contributions']) &&
+          data.goals[0].targetCents is int && data.goals[0].targetCents > 0 &&
+          data.goals[0].contributions is list && data.goals[0].contributions.size() == 12
+        ));
+    }
+
     // Pillar 1: Master Gate parent check for user subcollections
     function parentWorkspaceOwned(userId) {
       return exists(/databases/$(database)/documents/users/$(userId))
@@ -1071,6 +1098,2283 @@ service cloud.firestore {
           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'email', 'photoUrl', 'city', 'state', 'selectedLogoId', 'pixRecipient', 'watchlistTickers', 'updatedAt'])
         );
       allow delete: if isValidId(userId) && isOwner(userId);
+
+      // Family budget forecasts are isolated from payable obligations and wallet balances.
+      match /budgetYears/{budgetYearId} {
+        allow get: if isValidId(userId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && budgetYearId.matches('^20[0-9]{2} (never readable/writable from browser)
+      match /pluggySettings/{slotId} {
+        allow read, write: if false;
+      }
+
+      match /fiscalReceipts/{noteId} {
+        allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && parentWorkspaceOwned(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidFiscalReceipt(incoming(), userId);
+        allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && hasImmutableCoreOnUpdate()
+          && isValidFiscalReceipt(incoming(), userId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'kind', 'docType', 'uf', 'store', 'cnpj', 'emitterAddress',
+            'issuedAt', 'issuedTime', 'accessKey', 'number', 'series', 'paymentMethod',
+            'discountCents', 'totalCents', 'items', 'archiveCategory', 'folderPath',
+            'storagePath', 'fileName', 'fileMimeType', 'fileHash', 'documentUrl',
+            'sourceUrl', 'linkedTransactionId', 'processingStatus', 'processingError',
+            'sourceOrigin', 'lowConfidenceFields', 'warranty', 'sourceRecordId', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /banks/{bankId} {
+        allow get: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(bankId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidBankAccount(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(bankId) && isOwner(userId)
+          && isValidBankAccount(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balanceCents', 'name', 'institution', 'color', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['institution', 'name', 'accountType', 'number', 'balanceCents', 'color', 'sourceRecordId', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /cards/{cardId} {
+        allow get: if isValidId(userId) && isValidId(cardId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(cardId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCreditCard(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(cardId) && isOwner(userId)
+          && isValidCreditCard(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['manualLimitCents', 'manualUsedCents', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['creditLimitCents', 'availableCents', 'closingDay', 'dueDay', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['institution', 'name', 'brand', 'number', 'creditLimitCents', 'availableCents', 'closingDay', 'dueDay', 'linkedAnnualExpenseId', 'sourceRecordId', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(cardId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /cardMonthSnapshots/{snapshotId} {
+        allow get: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCardMonthSnapshot(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId)
+          && isValidCardMonthSnapshot(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'accountId', 'accountName', 'isUnlinked', 'period', 'capturedAt', 'closingDate', 'dueDate',
+            'invoiceCents', 'providerInvoiceId', 'totalLimitCents', 'availableLimitCents',
+            'usedLimitCents', 'transactions', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /transactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidWalletTransaction(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && isValidWalletTransaction(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['description', 'amountCents', 'date', 'category', 'reconciledEventId', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueSources/{sourceId} {
+        allow get: if isValidId(userId) && isValidId(sourceId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(sourceId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueSource(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(sourceId) && isOwner(userId)
+          && isValidRevenueSource(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'category', 'expectedCents', 'dueDay', 'recurrence', 'active',
+            'firstDue', 'details', 'note', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(sourceId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueContracts/{contractId} {
+        allow get: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueContract(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && isValidRevenueContract(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['note', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueEntries/{entryId} {
+        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueEntry(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && isValidRevenueEntry(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['receivedCents', 'receivedDate', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'sourceId', 'contractId', 'installmentNumber', 'title', 'category',
+              'dueDate', 'expectedCents', 'receivedDate', 'receivedCents', 'agreedCents',
+              'adjustmentCents', 'discountCents', 'surchargeCents', 'accountId',
+              'bankTransactionId', 'attachments', 'note', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueEvents/{eventId} {
+        allow get: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueEvent(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && isValidRevenueEvent(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'entryId', 'kind', 'reason', 'eventCreatedAt', 'accountId', 'bankTransactionId',
+              'targetEventId', 'idempotencyKey', 'beforeData', 'afterData', 'attachments',
+              'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /annualYears/{yearId} {
+        allow get: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAnnualYearRecord(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
+          && isValidAnnualYearRecord(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'sourceName', 'archivedAt',
+            'totalExpenseCents', 'categoryTotalsCents', 'monthlyCategoryCents', 'snapshotUpdatedAt',
+            'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /annualExpenses/{rowId} {
+        allow get: if isValidId(userId) && isValidId(rowId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(rowId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAnnualExpenseRow(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(rowId) && isOwner(userId)
+          && isValidAnnualExpenseRow(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['months', 'creditor', 'category', 'dueDay', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'year', 'creditor', 'category', 'dueDay', 'months',
+              'expenseKind', 'expenseSource', 'annualTaxKind', 'consumptionValueType',
+              'position', 'sourceContractId', 'sourceTemplateId', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(rowId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /monthlyBills/{billId} {
+        allow get: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(billId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidMonthlyBill(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(billId) && isOwner(userId)
+          && isValidMonthlyBill(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['expectedCents', 'paidCents', 'paidDate', 'isSettled', 'note', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'period', 'creditor', 'category', 'description', 'dueDate', 'expectedCents',
+              'paidDate', 'paidCents', 'isSettled', 'sourceAnnualId', 'contractId',
+              'installmentNumber', 'expenseKind', 'accountId', 'bankTransactionId',
+              'discountCents', 'surchargeCents', 'attachments', 'isCardInvoice', 'cardId',
+              'note', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /paymentEvents/{eventId} {
+        allow get: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPaymentEvent(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && isValidPaymentEvent(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /payableContracts/{contractId} {
+        allow get: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPayableContract(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && isValidPayableContract(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'description', 'sourceSheet', 'detailsJson',
+            'archivedAt', 'contractCreatedAt', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /payableInstallments/{installmentId} {
+        allow get: if isValidId(userId) && isValidId(installmentId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(installmentId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPayableInstallment(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/payableContracts/$(incoming().contractId));
+        allow update: if isValidId(userId) && isValidId(installmentId) && isOwner(userId)
+          && isValidPayableInstallment(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().contractId == existing().contractId
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'number', 'dueDate', 'expectedCents', 'isSettled', 'paidCents',
+              'paidDate', 'note', 'accountId', 'bankTransactionId', 'discountCents',
+              'surchargeCents', 'attachments', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(installmentId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /personalAgenda/{agendaId} {
+        allow get: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPersonalAgenda(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
+          && isValidPersonalAgenda(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'kind', 'title', 'startDate', 'time', 'endTime', 'breakRule', 'company',
+            'description', 'recurrence', 'customDates', 'favorite', 'reminder',
+            'reminderMinutesBefore', 'completed', 'completedAt', 'linkedNoteId',
+            'linkedContactId', 'color', 'items', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaChecks/{checkId} {
+        allow get: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checkId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaCheck(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(checkId) && isOwner(userId)
+          && isValidAgendaCheck(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['done', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /shoppingList/{itemId} {
+        allow get: if isValidId(userId) && isValidId(itemId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(itemId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidShoppingItem(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(itemId) && isOwner(userId)
+          && isValidShoppingItem(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['checked', 'name', 'quantity', 'unitPriceCents', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(itemId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /vehicles/{vehicleId} {
+        allow get: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidVehicle(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId)
+          && isValidVehicle(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['odometerKm', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'plate', 'brand', 'model', 'year', 'fuelType', 'odometerKm',
+              'status', 'assignedDriverId', 'renavam', 'stateUf', 'tankCapacityLiters',
+              'fipeValue', 'monthlyFixedCost', 'notes', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageDrivers/{driverId} {
+        allow get: if isValidId(userId) && isValidId(driverId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(driverId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageDriver(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(driverId) && isOwner(userId)
+          && isValidGarageDriver(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'cnhNumber', 'cnhCategory', 'cnhExpiry', 'phone', 'allowedVehicleIds', 'active', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(driverId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageFuelings/{fuelingId} {
+        allow get: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageFueling(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId)
+          && isValidGarageFueling(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'date', 'odometer', 'fuelType', 'quantity', 'unitPrice', 'totalCost',
+            'fullTank', 'stationName', 'nfceKey', 'notes', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageMaintenances/{maintId} {
+        allow get: if isValidId(userId) && isValidId(maintId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(maintId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageMaintenance(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(maintId) && isOwner(userId)
+          && isValidGarageMaintenance(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && (
+            (existing().status != 'CONCLUIDA' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(maintId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageExpenses/{expId} {
+        allow get: if isValidId(userId) && isValidId(expId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(expId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageExpense(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(expId) && isOwner(userId)
+          && isValidGarageExpense(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'date', 'amount', 'description', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(expId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageFines/{fineId} {
+        allow get: if isValidId(userId) && isValidId(fineId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(fineId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageFine(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(fineId) && isOwner(userId)
+          && isValidGarageFine(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'sneDiscountApplied', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(fineId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageDocuments/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(docId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageDocument(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(docId) && isOwner(userId)
+          && isValidGarageDocument(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidAt', 'amount', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(docId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageChecklists/{checklistId} {
+        allow get: if isValidId(userId) && isValidId(checklistId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checklistId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageChecklist(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(checklistId) && isOwner(userId)
+          && isValidGarageChecklist(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['generalNotes', 'generatedMaintenanceId', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(checklistId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageRoutes/{routeId} {
+        allow get: if isValidId(userId) && isValidId(routeId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(routeId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageRoute(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(routeId) && isOwner(userId)
+          && isValidGarageRoute(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['purpose', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(routeId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageReminders/{reminderId} {
+        allow get: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(reminderId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageReminder(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(reminderId) && isOwner(userId)
+          && isValidGarageReminder(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'completedAt', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /fuelLogs/{logId} {
+        allow get: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(logId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidFuelLog(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(logId) && isOwner(userId)
+          && isValidFuelLog(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['liters', 'totalCents', 'odometerKm', 'date', 'fuelType', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /trips/{tripId} {
+        allow get: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(tripId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidTripPlan(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(tripId) && isOwner(userId)
+          && isValidTripPlan(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            (existing().status != 'Concluída' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'spentCents', 'notes', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /loyaltyHolders/{holderId} {
+        allow get: if isValidId(userId) && isValidId(holderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(holderId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidLoyaltyHolder(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(holderId) && isOwner(userId)
+          && isValidLoyaltyHolder(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'relationship', 'cpfMasked', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(holderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /loyaltyAccounts/{accountId} {
+        allow get: if isValidId(userId) && isValidId(accountId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(accountId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidLoyaltyAccount(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/loyaltyHolders/$(incoming().holderId));
+        allow update: if isValidId(userId) && isValidId(accountId) && isOwner(userId)
+          && isValidLoyaltyAccount(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'expiringPoints', 'expirationDate', 'avgCpm', 'cpfsUsed', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['accountNumber', 'tier', 'cpfLimit', 'cpfsUsed', 'expiringPoints', 'expirationDate', 'avgCpm', 'balance', 'holderId', 'holderName', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(accountId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /pointTransactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPointTransaction(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/loyaltyAccounts/$(incoming().accountId));
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaOverrides/{overrideId} {
+        allow get: if isValidId(userId) && isValidId(overrideId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(overrideId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaOverride(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(overrideId) && isOwner(userId)
+          && isValidAgendaOverride(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'action', 'postponedToDate', 'postponedToTime', 'overrideTitle', 'overrideTime',
+            'overrideEndTime', 'overrideBreakRule', 'overrideCompany', 'overrideDescription',
+            'note', 'updatedAtIso', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(overrideId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /contactCategories/{categoryId} {
+        allow get: if isValidId(userId) && isValidId(categoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(categoryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidContactCategory(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(categoryId) && isOwner(userId)
+          && isValidContactCategory(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'isCommercial', 'order', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(categoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /contactSubcategories/{subcategoryId} {
+        allow get: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidContactSubcategory(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId)
+          && isValidContactSubcategory(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['categoryId', 'name', 'color', 'order', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaContacts/{contactId} {
+        allow get: if isValidId(userId) && isValidId(contactId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contactId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaContact(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contactId) && isOwner(userId)
+          && isValidAgendaContact(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'nickname', 'birthDay', 'birthMonth', 'birthYear', 'phones', 'emails',
+            'categoryId', 'subcategoryId', 'categoryColor', 'subcategoryColor', 'relationship',
+            'company', 'profession', 'address', 'city', 'state', 'website', 'notes',
+            'birthdayReminderEnabled', 'birthdayReminderDaysBefore', 'notificationsEnabled', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contactId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaAlarms/{alarmId} {
+        allow get: if isValidId(userId) && isValidId(alarmId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(alarmId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaAlarm(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(alarmId) && isOwner(userId)
+          && isValidAgendaAlarm(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'time', 'repeatDays', 'soundEnabled', 'soundTone', 'enabled',
+            'snoozeUntilIso', 'lastTriggeredKey', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(alarmId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaNotes/{noteId} {
+        allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaNote(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId)
+          && isValidAgendaNote(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'title', 'color', 'content', 'checklistItems', 'stores',
+            'linkedAgendaEventId', 'linkedDate', 'updatedAtIso', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /calculatorHistory/{entryId} {
+        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCalculatorHistoryEntry(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaSettings/{settingId} {
+        allow get: if isValidId(userId) && isValidId(settingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(settingId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaSettings(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(settingId) && isOwner(userId)
+          && isValidAgendaSettings(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'timeFormat', 'showSeconds', 'defaultSnoozeMinutes', 'leapYearBirthdayRule',
+            'shoppingHighlightColor', 'notificationsEnabled', 'alarmSoundDefault',
+            'weatherLocationName', 'weatherLat', 'weatherLon', 'themeMode',
+            'hiddenDefaultCategoryIds', 'hiddenDefaultSubcategoryIds', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(settingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+    }
+  }
+}
+);
+        allow list: if isOwner(userId) && parentWorkspaceOwned(userId)
+          && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && budgetYearId.matches('^20[0-9]{2} (never readable/writable from browser)
+      match /pluggySettings/{slotId} {
+        allow read, write: if false;
+      }
+
+      match /fiscalReceipts/{noteId} {
+        allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && parentWorkspaceOwned(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidFiscalReceipt(incoming(), userId);
+        allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && hasImmutableCoreOnUpdate()
+          && isValidFiscalReceipt(incoming(), userId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'kind', 'docType', 'uf', 'store', 'cnpj', 'emitterAddress',
+            'issuedAt', 'issuedTime', 'accessKey', 'number', 'series', 'paymentMethod',
+            'discountCents', 'totalCents', 'items', 'archiveCategory', 'folderPath',
+            'storagePath', 'fileName', 'fileMimeType', 'fileHash', 'documentUrl',
+            'sourceUrl', 'linkedTransactionId', 'processingStatus', 'processingError',
+            'sourceOrigin', 'lowConfidenceFields', 'warranty', 'sourceRecordId', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /banks/{bankId} {
+        allow get: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(bankId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidBankAccount(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(bankId) && isOwner(userId)
+          && isValidBankAccount(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balanceCents', 'name', 'institution', 'color', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['institution', 'name', 'accountType', 'number', 'balanceCents', 'color', 'sourceRecordId', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /cards/{cardId} {
+        allow get: if isValidId(userId) && isValidId(cardId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(cardId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCreditCard(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(cardId) && isOwner(userId)
+          && isValidCreditCard(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['manualLimitCents', 'manualUsedCents', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['creditLimitCents', 'availableCents', 'closingDay', 'dueDay', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['institution', 'name', 'brand', 'number', 'creditLimitCents', 'availableCents', 'closingDay', 'dueDay', 'linkedAnnualExpenseId', 'sourceRecordId', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(cardId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /cardMonthSnapshots/{snapshotId} {
+        allow get: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCardMonthSnapshot(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId)
+          && isValidCardMonthSnapshot(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'accountId', 'accountName', 'isUnlinked', 'period', 'capturedAt', 'closingDate', 'dueDate',
+            'invoiceCents', 'providerInvoiceId', 'totalLimitCents', 'availableLimitCents',
+            'usedLimitCents', 'transactions', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /transactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidWalletTransaction(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && isValidWalletTransaction(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['description', 'amountCents', 'date', 'category', 'reconciledEventId', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueSources/{sourceId} {
+        allow get: if isValidId(userId) && isValidId(sourceId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(sourceId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueSource(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(sourceId) && isOwner(userId)
+          && isValidRevenueSource(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'category', 'expectedCents', 'dueDay', 'recurrence', 'active',
+            'firstDue', 'details', 'note', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(sourceId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueContracts/{contractId} {
+        allow get: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueContract(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && isValidRevenueContract(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['note', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueEntries/{entryId} {
+        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueEntry(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && isValidRevenueEntry(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['receivedCents', 'receivedDate', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'sourceId', 'contractId', 'installmentNumber', 'title', 'category',
+              'dueDate', 'expectedCents', 'receivedDate', 'receivedCents', 'agreedCents',
+              'adjustmentCents', 'discountCents', 'surchargeCents', 'accountId',
+              'bankTransactionId', 'attachments', 'note', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueEvents/{eventId} {
+        allow get: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueEvent(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && isValidRevenueEvent(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'entryId', 'kind', 'reason', 'eventCreatedAt', 'accountId', 'bankTransactionId',
+              'targetEventId', 'idempotencyKey', 'beforeData', 'afterData', 'attachments',
+              'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /annualYears/{yearId} {
+        allow get: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAnnualYearRecord(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
+          && isValidAnnualYearRecord(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'sourceName', 'archivedAt',
+            'totalExpenseCents', 'categoryTotalsCents', 'monthlyCategoryCents', 'snapshotUpdatedAt',
+            'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /annualExpenses/{rowId} {
+        allow get: if isValidId(userId) && isValidId(rowId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(rowId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAnnualExpenseRow(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(rowId) && isOwner(userId)
+          && isValidAnnualExpenseRow(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['months', 'creditor', 'category', 'dueDay', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'year', 'creditor', 'category', 'dueDay', 'months',
+              'expenseKind', 'expenseSource', 'annualTaxKind', 'consumptionValueType',
+              'position', 'sourceContractId', 'sourceTemplateId', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(rowId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /monthlyBills/{billId} {
+        allow get: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(billId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidMonthlyBill(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(billId) && isOwner(userId)
+          && isValidMonthlyBill(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['expectedCents', 'paidCents', 'paidDate', 'isSettled', 'note', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'period', 'creditor', 'category', 'description', 'dueDate', 'expectedCents',
+              'paidDate', 'paidCents', 'isSettled', 'sourceAnnualId', 'contractId',
+              'installmentNumber', 'expenseKind', 'accountId', 'bankTransactionId',
+              'discountCents', 'surchargeCents', 'attachments', 'isCardInvoice', 'cardId',
+              'note', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /paymentEvents/{eventId} {
+        allow get: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPaymentEvent(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && isValidPaymentEvent(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /payableContracts/{contractId} {
+        allow get: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPayableContract(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && isValidPayableContract(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'description', 'sourceSheet', 'detailsJson',
+            'archivedAt', 'contractCreatedAt', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /payableInstallments/{installmentId} {
+        allow get: if isValidId(userId) && isValidId(installmentId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(installmentId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPayableInstallment(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/payableContracts/$(incoming().contractId));
+        allow update: if isValidId(userId) && isValidId(installmentId) && isOwner(userId)
+          && isValidPayableInstallment(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().contractId == existing().contractId
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'number', 'dueDate', 'expectedCents', 'isSettled', 'paidCents',
+              'paidDate', 'note', 'accountId', 'bankTransactionId', 'discountCents',
+              'surchargeCents', 'attachments', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(installmentId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /personalAgenda/{agendaId} {
+        allow get: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPersonalAgenda(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
+          && isValidPersonalAgenda(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'kind', 'title', 'startDate', 'time', 'endTime', 'breakRule', 'company',
+            'description', 'recurrence', 'customDates', 'favorite', 'reminder',
+            'reminderMinutesBefore', 'completed', 'completedAt', 'linkedNoteId',
+            'linkedContactId', 'color', 'items', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaChecks/{checkId} {
+        allow get: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checkId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaCheck(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(checkId) && isOwner(userId)
+          && isValidAgendaCheck(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['done', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /shoppingList/{itemId} {
+        allow get: if isValidId(userId) && isValidId(itemId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(itemId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidShoppingItem(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(itemId) && isOwner(userId)
+          && isValidShoppingItem(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['checked', 'name', 'quantity', 'unitPriceCents', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(itemId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /vehicles/{vehicleId} {
+        allow get: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidVehicle(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId)
+          && isValidVehicle(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['odometerKm', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'plate', 'brand', 'model', 'year', 'fuelType', 'odometerKm',
+              'status', 'assignedDriverId', 'renavam', 'stateUf', 'tankCapacityLiters',
+              'fipeValue', 'monthlyFixedCost', 'notes', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageDrivers/{driverId} {
+        allow get: if isValidId(userId) && isValidId(driverId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(driverId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageDriver(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(driverId) && isOwner(userId)
+          && isValidGarageDriver(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'cnhNumber', 'cnhCategory', 'cnhExpiry', 'phone', 'allowedVehicleIds', 'active', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(driverId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageFuelings/{fuelingId} {
+        allow get: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageFueling(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId)
+          && isValidGarageFueling(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'date', 'odometer', 'fuelType', 'quantity', 'unitPrice', 'totalCost',
+            'fullTank', 'stationName', 'nfceKey', 'notes', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageMaintenances/{maintId} {
+        allow get: if isValidId(userId) && isValidId(maintId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(maintId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageMaintenance(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(maintId) && isOwner(userId)
+          && isValidGarageMaintenance(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && (
+            (existing().status != 'CONCLUIDA' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(maintId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageExpenses/{expId} {
+        allow get: if isValidId(userId) && isValidId(expId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(expId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageExpense(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(expId) && isOwner(userId)
+          && isValidGarageExpense(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'date', 'amount', 'description', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(expId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageFines/{fineId} {
+        allow get: if isValidId(userId) && isValidId(fineId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(fineId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageFine(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(fineId) && isOwner(userId)
+          && isValidGarageFine(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'sneDiscountApplied', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(fineId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageDocuments/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(docId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageDocument(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(docId) && isOwner(userId)
+          && isValidGarageDocument(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidAt', 'amount', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(docId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageChecklists/{checklistId} {
+        allow get: if isValidId(userId) && isValidId(checklistId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checklistId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageChecklist(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(checklistId) && isOwner(userId)
+          && isValidGarageChecklist(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['generalNotes', 'generatedMaintenanceId', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(checklistId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageRoutes/{routeId} {
+        allow get: if isValidId(userId) && isValidId(routeId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(routeId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageRoute(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(routeId) && isOwner(userId)
+          && isValidGarageRoute(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['purpose', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(routeId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageReminders/{reminderId} {
+        allow get: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(reminderId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageReminder(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(reminderId) && isOwner(userId)
+          && isValidGarageReminder(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'completedAt', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /fuelLogs/{logId} {
+        allow get: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(logId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidFuelLog(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(logId) && isOwner(userId)
+          && isValidFuelLog(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['liters', 'totalCents', 'odometerKm', 'date', 'fuelType', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /trips/{tripId} {
+        allow get: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(tripId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidTripPlan(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(tripId) && isOwner(userId)
+          && isValidTripPlan(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            (existing().status != 'Concluída' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'spentCents', 'notes', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /loyaltyHolders/{holderId} {
+        allow get: if isValidId(userId) && isValidId(holderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(holderId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidLoyaltyHolder(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(holderId) && isOwner(userId)
+          && isValidLoyaltyHolder(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'relationship', 'cpfMasked', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(holderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /loyaltyAccounts/{accountId} {
+        allow get: if isValidId(userId) && isValidId(accountId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(accountId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidLoyaltyAccount(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/loyaltyHolders/$(incoming().holderId));
+        allow update: if isValidId(userId) && isValidId(accountId) && isOwner(userId)
+          && isValidLoyaltyAccount(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'expiringPoints', 'expirationDate', 'avgCpm', 'cpfsUsed', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['accountNumber', 'tier', 'cpfLimit', 'cpfsUsed', 'expiringPoints', 'expirationDate', 'avgCpm', 'balance', 'holderId', 'holderName', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(accountId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /pointTransactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPointTransaction(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/loyaltyAccounts/$(incoming().accountId));
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaOverrides/{overrideId} {
+        allow get: if isValidId(userId) && isValidId(overrideId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(overrideId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaOverride(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(overrideId) && isOwner(userId)
+          && isValidAgendaOverride(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'action', 'postponedToDate', 'postponedToTime', 'overrideTitle', 'overrideTime',
+            'overrideEndTime', 'overrideBreakRule', 'overrideCompany', 'overrideDescription',
+            'note', 'updatedAtIso', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(overrideId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /contactCategories/{categoryId} {
+        allow get: if isValidId(userId) && isValidId(categoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(categoryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidContactCategory(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(categoryId) && isOwner(userId)
+          && isValidContactCategory(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'isCommercial', 'order', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(categoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /contactSubcategories/{subcategoryId} {
+        allow get: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidContactSubcategory(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId)
+          && isValidContactSubcategory(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['categoryId', 'name', 'color', 'order', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaContacts/{contactId} {
+        allow get: if isValidId(userId) && isValidId(contactId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contactId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaContact(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contactId) && isOwner(userId)
+          && isValidAgendaContact(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'nickname', 'birthDay', 'birthMonth', 'birthYear', 'phones', 'emails',
+            'categoryId', 'subcategoryId', 'categoryColor', 'subcategoryColor', 'relationship',
+            'company', 'profession', 'address', 'city', 'state', 'website', 'notes',
+            'birthdayReminderEnabled', 'birthdayReminderDaysBefore', 'notificationsEnabled', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contactId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaAlarms/{alarmId} {
+        allow get: if isValidId(userId) && isValidId(alarmId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(alarmId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaAlarm(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(alarmId) && isOwner(userId)
+          && isValidAgendaAlarm(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'time', 'repeatDays', 'soundEnabled', 'soundTone', 'enabled',
+            'snoozeUntilIso', 'lastTriggeredKey', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(alarmId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaNotes/{noteId} {
+        allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaNote(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId)
+          && isValidAgendaNote(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'title', 'color', 'content', 'checklistItems', 'stores',
+            'linkedAgendaEventId', 'linkedDate', 'updatedAtIso', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /calculatorHistory/{entryId} {
+        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCalculatorHistoryEntry(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaSettings/{settingId} {
+        allow get: if isValidId(userId) && isValidId(settingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(settingId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaSettings(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(settingId) && isOwner(userId)
+          && isValidAgendaSettings(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'timeFormat', 'showSeconds', 'defaultSnoozeMinutes', 'leapYearBirthdayRule',
+            'shoppingHighlightColor', 'notificationsEnabled', 'alarmSoundDefault',
+            'weatherLocationName', 'weatherLat', 'weatherLon', 'themeMode',
+            'hiddenDefaultCategoryIds', 'hiddenDefaultSubcategoryIds', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(settingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+    }
+  }
+}
+)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidBudgetYear(incoming(), userId, budgetYearId);
+        allow update: if isValidId(userId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && budgetYearId.matches('^20[0-9]{2} (never readable/writable from browser)
+      match /pluggySettings/{slotId} {
+        allow read, write: if false;
+      }
+
+      match /fiscalReceipts/{noteId} {
+        allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && parentWorkspaceOwned(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidFiscalReceipt(incoming(), userId);
+        allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId)
+          && hasImmutableCoreOnUpdate()
+          && isValidFiscalReceipt(incoming(), userId)
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'id', 'kind', 'docType', 'uf', 'store', 'cnpj', 'emitterAddress',
+            'issuedAt', 'issuedTime', 'accessKey', 'number', 'series', 'paymentMethod',
+            'discountCents', 'totalCents', 'items', 'archiveCategory', 'folderPath',
+            'storagePath', 'fileName', 'fileMimeType', 'fileHash', 'documentUrl',
+            'sourceUrl', 'linkedTransactionId', 'processingStatus', 'processingError',
+            'sourceOrigin', 'lowConfidenceFields', 'warranty', 'sourceRecordId', 'updatedAt'
+          ]);
+        allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /banks/{bankId} {
+        allow get: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(bankId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidBankAccount(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(bankId) && isOwner(userId)
+          && isValidBankAccount(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balanceCents', 'name', 'institution', 'color', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['institution', 'name', 'accountType', 'number', 'balanceCents', 'color', 'sourceRecordId', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(bankId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /cards/{cardId} {
+        allow get: if isValidId(userId) && isValidId(cardId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(cardId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCreditCard(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(cardId) && isOwner(userId)
+          && isValidCreditCard(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['manualLimitCents', 'manualUsedCents', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['creditLimitCents', 'availableCents', 'closingDay', 'dueDay', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['institution', 'name', 'brand', 'number', 'creditLimitCents', 'availableCents', 'closingDay', 'dueDay', 'linkedAnnualExpenseId', 'sourceRecordId', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(cardId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /cardMonthSnapshots/{snapshotId} {
+        allow get: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCardMonthSnapshot(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId)
+          && isValidCardMonthSnapshot(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'accountId', 'accountName', 'isUnlinked', 'period', 'capturedAt', 'closingDate', 'dueDate',
+            'invoiceCents', 'providerInvoiceId', 'totalLimitCents', 'availableLimitCents',
+            'usedLimitCents', 'transactions', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(snapshotId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /transactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidWalletTransaction(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && isValidWalletTransaction(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['description', 'amountCents', 'date', 'category', 'reconciledEventId', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueSources/{sourceId} {
+        allow get: if isValidId(userId) && isValidId(sourceId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(sourceId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueSource(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(sourceId) && isOwner(userId)
+          && isValidRevenueSource(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'title', 'category', 'expectedCents', 'dueDay', 'recurrence', 'active',
+            'firstDue', 'details', 'note', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(sourceId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueContracts/{contractId} {
+        allow get: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueContract(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && isValidRevenueContract(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['note', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueEntries/{entryId} {
+        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueEntry(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && isValidRevenueEntry(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['receivedCents', 'receivedDate', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'sourceId', 'contractId', 'installmentNumber', 'title', 'category',
+              'dueDate', 'expectedCents', 'receivedDate', 'receivedCents', 'agreedCents',
+              'adjustmentCents', 'discountCents', 'surchargeCents', 'accountId',
+              'bankTransactionId', 'attachments', 'note', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /revenueEvents/{eventId} {
+        allow get: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidRevenueEvent(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && isValidRevenueEvent(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'entryId', 'kind', 'reason', 'eventCreatedAt', 'accountId', 'bankTransactionId',
+              'targetEventId', 'idempotencyKey', 'beforeData', 'afterData', 'attachments',
+              'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /annualYears/{yearId} {
+        allow get: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAnnualYearRecord(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(yearId) && isOwner(userId)
+          && isValidAnnualYearRecord(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'sourceName', 'archivedAt',
+            'totalExpenseCents', 'categoryTotalsCents', 'monthlyCategoryCents', 'snapshotUpdatedAt',
+            'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(yearId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /annualExpenses/{rowId} {
+        allow get: if isValidId(userId) && isValidId(rowId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(rowId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAnnualExpenseRow(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(rowId) && isOwner(userId)
+          && isValidAnnualExpenseRow(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['months', 'creditor', 'category', 'dueDay', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'year', 'creditor', 'category', 'dueDay', 'months',
+              'expenseKind', 'expenseSource', 'annualTaxKind', 'consumptionValueType',
+              'position', 'sourceContractId', 'sourceTemplateId', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(rowId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /monthlyBills/{billId} {
+        allow get: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(billId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidMonthlyBill(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(billId) && isOwner(userId)
+          && isValidMonthlyBill(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['expectedCents', 'paidCents', 'paidDate', 'isSettled', 'note', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'period', 'creditor', 'category', 'description', 'dueDate', 'expectedCents',
+              'paidDate', 'paidCents', 'isSettled', 'sourceAnnualId', 'contractId',
+              'installmentNumber', 'expenseKind', 'accountId', 'bankTransactionId',
+              'discountCents', 'surchargeCents', 'attachments', 'isCardInvoice', 'cardId',
+              'note', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(billId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /paymentEvents/{eventId} {
+        allow get: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPaymentEvent(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(eventId) && isOwner(userId)
+          && isValidPaymentEvent(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(eventId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /payableContracts/{contractId} {
+        allow get: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPayableContract(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contractId) && isOwner(userId)
+          && isValidPayableContract(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'description', 'sourceSheet', 'detailsJson',
+            'archivedAt', 'contractCreatedAt', 'sourceRecordId', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contractId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /payableInstallments/{installmentId} {
+        allow get: if isValidId(userId) && isValidId(installmentId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(installmentId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPayableInstallment(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/payableContracts/$(incoming().contractId));
+        allow update: if isValidId(userId) && isValidId(installmentId) && isOwner(userId)
+          && isValidPayableInstallment(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().contractId == existing().contractId
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['paidCents', 'paidDate', 'isSettled', 'discountCents', 'surchargeCents', 'note', 'accountId', 'bankTransactionId', 'attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['attachments', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'number', 'dueDate', 'expectedCents', 'isSettled', 'paidCents',
+              'paidDate', 'note', 'accountId', 'bankTransactionId', 'discountCents',
+              'surchargeCents', 'attachments', 'sourceRecordId', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(installmentId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /personalAgenda/{agendaId} {
+        allow get: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPersonalAgenda(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(agendaId) && isOwner(userId)
+          && isValidPersonalAgenda(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'kind', 'title', 'startDate', 'time', 'endTime', 'breakRule', 'company',
+            'description', 'recurrence', 'customDates', 'favorite', 'reminder',
+            'reminderMinutesBefore', 'completed', 'completedAt', 'linkedNoteId',
+            'linkedContactId', 'color', 'items', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(agendaId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaChecks/{checkId} {
+        allow get: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checkId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaCheck(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(checkId) && isOwner(userId)
+          && isValidAgendaCheck(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['done', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(checkId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /shoppingList/{itemId} {
+        allow get: if isValidId(userId) && isValidId(itemId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(itemId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidShoppingItem(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(itemId) && isOwner(userId)
+          && isValidShoppingItem(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['checked', 'name', 'quantity', 'unitPriceCents', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(itemId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /vehicles/{vehicleId} {
+        allow get: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidVehicle(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId)
+          && isValidVehicle(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['odometerKm', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'plate', 'brand', 'model', 'year', 'fuelType', 'odometerKm',
+              'status', 'assignedDriverId', 'renavam', 'stateUf', 'tankCapacityLiters',
+              'fipeValue', 'monthlyFixedCost', 'notes', 'updatedAt'
+            ])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(vehicleId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageDrivers/{driverId} {
+        allow get: if isValidId(userId) && isValidId(driverId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(driverId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageDriver(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(driverId) && isOwner(userId)
+          && isValidGarageDriver(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'cnhNumber', 'cnhCategory', 'cnhExpiry', 'phone', 'allowedVehicleIds', 'active', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(driverId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageFuelings/{fuelingId} {
+        allow get: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageFueling(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId)
+          && isValidGarageFueling(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'date', 'odometer', 'fuelType', 'quantity', 'unitPrice', 'totalCost',
+            'fullTank', 'stationName', 'nfceKey', 'notes', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(fuelingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageMaintenances/{maintId} {
+        allow get: if isValidId(userId) && isValidId(maintId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(maintId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageMaintenance(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(maintId) && isOwner(userId)
+          && isValidGarageMaintenance(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && (
+            (existing().status != 'CONCLUIDA' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(maintId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageExpenses/{expId} {
+        allow get: if isValidId(userId) && isValidId(expId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(expId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageExpense(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(expId) && isOwner(userId)
+          && isValidGarageExpense(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'date', 'amount', 'description', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(expId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageFines/{fineId} {
+        allow get: if isValidId(userId) && isValidId(fineId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(fineId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageFine(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(fineId) && isOwner(userId)
+          && isValidGarageFine(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'sneDiscountApplied', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(fineId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageDocuments/{docId} {
+        allow get: if isValidId(userId) && isValidId(docId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(docId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageDocument(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(docId) && isOwner(userId)
+          && isValidGarageDocument(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'paidAt', 'amount', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(docId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageChecklists/{checklistId} {
+        allow get: if isValidId(userId) && isValidId(checklistId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(checklistId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageChecklist(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(checklistId) && isOwner(userId)
+          && isValidGarageChecklist(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['generalNotes', 'generatedMaintenanceId', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(checklistId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageRoutes/{routeId} {
+        allow get: if isValidId(userId) && isValidId(routeId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(routeId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageRoute(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(routeId) && isOwner(userId)
+          && isValidGarageRoute(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['purpose', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(routeId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /garageReminders/{reminderId} {
+        allow get: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(reminderId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidGarageReminder(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(reminderId) && isOwner(userId)
+          && isValidGarageReminder(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().vehicleId == existing().vehicleId
+          && incoming().diff(existing()).affectedKeys().hasOnly(['completed', 'completedAt', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(reminderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /fuelLogs/{logId} {
+        allow get: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(logId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidFuelLog(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/vehicles/$(incoming().vehicleId));
+        allow update: if isValidId(userId) && isValidId(logId) && isOwner(userId)
+          && isValidFuelLog(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['liters', 'totalCents', 'odometerKm', 'date', 'fuelType', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(logId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /trips/{tripId} {
+        allow get: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(tripId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidTripPlan(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(tripId) && isOwner(userId)
+          && isValidTripPlan(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            (existing().status != 'Concluída' && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'spentCents', 'notes', 'updatedAt'])) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['notes', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(tripId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /loyaltyHolders/{holderId} {
+        allow get: if isValidId(userId) && isValidId(holderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(holderId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidLoyaltyHolder(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(holderId) && isOwner(userId)
+          && isValidLoyaltyHolder(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'relationship', 'cpfMasked', 'notes', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(holderId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /loyaltyAccounts/{accountId} {
+        allow get: if isValidId(userId) && isValidId(accountId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(accountId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidLoyaltyAccount(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/loyaltyHolders/$(incoming().holderId));
+        allow update: if isValidId(userId) && isValidId(accountId) && isOwner(userId)
+          && isValidLoyaltyAccount(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['balance', 'expiringPoints', 'expirationDate', 'avgCpm', 'cpfsUsed', 'updatedAt']) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['accountNumber', 'tier', 'cpfLimit', 'cpfsUsed', 'expiringPoints', 'expirationDate', 'avgCpm', 'balance', 'holderId', 'holderName', 'updatedAt'])
+          )
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(accountId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /pointTransactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidPointTransaction(incoming(), userId)
+          && parentWorkspaceOwned(userId)
+          && existsAfter(/databases/$(database)/documents/users/$(userId)/loyaltyAccounts/$(incoming().accountId));
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaOverrides/{overrideId} {
+        allow get: if isValidId(userId) && isValidId(overrideId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(overrideId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaOverride(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(overrideId) && isOwner(userId)
+          && isValidAgendaOverride(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'action', 'postponedToDate', 'postponedToTime', 'overrideTitle', 'overrideTime',
+            'overrideEndTime', 'overrideBreakRule', 'overrideCompany', 'overrideDescription',
+            'note', 'updatedAtIso', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(overrideId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /contactCategories/{categoryId} {
+        allow get: if isValidId(userId) && isValidId(categoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(categoryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidContactCategory(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(categoryId) && isOwner(userId)
+          && isValidContactCategory(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'color', 'isCommercial', 'order', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(categoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /contactSubcategories/{subcategoryId} {
+        allow get: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidContactSubcategory(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId)
+          && isValidContactSubcategory(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly(['categoryId', 'name', 'color', 'order', 'updatedAt'])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(subcategoryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaContacts/{contactId} {
+        allow get: if isValidId(userId) && isValidId(contactId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(contactId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaContact(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(contactId) && isOwner(userId)
+          && isValidAgendaContact(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'nickname', 'birthDay', 'birthMonth', 'birthYear', 'phones', 'emails',
+            'categoryId', 'subcategoryId', 'categoryColor', 'subcategoryColor', 'relationship',
+            'company', 'profession', 'address', 'city', 'state', 'website', 'notes',
+            'birthdayReminderEnabled', 'birthdayReminderDaysBefore', 'notificationsEnabled', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(contactId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaAlarms/{alarmId} {
+        allow get: if isValidId(userId) && isValidId(alarmId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(alarmId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaAlarm(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(alarmId) && isOwner(userId)
+          && isValidAgendaAlarm(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'time', 'repeatDays', 'soundEnabled', 'soundTone', 'enabled',
+            'snoozeUntilIso', 'lastTriggeredKey', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(alarmId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaNotes/{noteId} {
+        allow get: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(noteId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaNote(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(noteId) && isOwner(userId)
+          && isValidAgendaNote(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'type', 'title', 'color', 'content', 'checklistItems', 'stores',
+            'linkedAgendaEventId', 'linkedDate', 'updatedAtIso', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(noteId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /calculatorHistory/{entryId} {
+        allow get: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(entryId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidCalculatorHistoryEntry(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(entryId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+
+      match /agendaSettings/{settingId} {
+        allow get: if isValidId(userId) && isValidId(settingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+        allow list: if isOwner(userId) && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId) && isValidId(settingId) && isOwner(userId)
+          && hasValidTimestampsOnCreate(incoming())
+          && isValidAgendaSettings(incoming(), userId)
+          && parentWorkspaceOwned(userId);
+        allow update: if isValidId(userId) && isValidId(settingId) && isOwner(userId)
+          && isValidAgendaSettings(incoming(), userId)
+          && hasImmutableCoreOnUpdate()
+          && incoming().diff(existing()).affectedKeys().hasOnly([
+            'timeFormat', 'showSeconds', 'defaultSnoozeMinutes', 'leapYearBirthdayRule',
+            'shoppingHighlightColor', 'notificationsEnabled', 'alarmSoundDefault',
+            'weatherLocationName', 'weatherLat', 'weatherLon', 'themeMode',
+            'hiddenDefaultCategoryIds', 'hiddenDefaultSubcategoryIds', 'updatedAt'
+          ])
+          && parentWorkspaceOwned(userId);
+        allow delete: if isValidId(userId) && isValidId(settingId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
+    }
+  }
+}
+)
+          && hasImmutableCoreOnUpdate()
+          && isValidBudgetYear(incoming(), userId, budgetYearId)
+          && incoming().diff(existing()).affectedKeys().hasOnly(['categories', 'rows', 'goals', 'updatedAt']);
+        allow delete: if isValidId(userId) && isOwner(userId) && parentWorkspaceOwned(userId);
+      }
 
       // Server-only encrypted Pluggy Open Finance credentials (never readable/writable from browser)
       match /pluggySettings/{slotId} {
